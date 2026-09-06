@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderConversation } from "../src/renderer/conversationRenderer";
 import { renderMath } from "../src/renderer/mathRenderer";
 import { buildPrintStyles } from "../src/renderer/printStyles";
-import { getBodyFontStack, resolvePdfAppearance } from "../src/services/pdfAppearanceService";
+import { getBodyFontStack, getTextWeightValues, resolvePdfAppearance } from "../src/services/pdfAppearanceService";
 import { DEFAULT_EXPORT_PREFERENCES } from "../src/types/preferences";
 import type { ConversationData } from "../src/types/conversation";
 import type { MathNode } from "../src/types/content";
@@ -42,6 +42,7 @@ describe("PDF document renderer", () => {
     document.body.replaceChildren(output);
     expect(document.querySelector(".message-user")).toBeTruthy();
     expect(document.querySelector(".message-assistant h2")?.textContent).toBe("Answer");
+    expect(document.querySelector(".message-user strong")?.textContent).toContain("Explain");
     expect(document.querySelector(".tok-type")?.textContent).toBe("int");
     const math = document.querySelector("math");
     expect(math?.namespaceURI).toBe(MATHML_NS);
@@ -119,6 +120,33 @@ describe("PDF document renderer", () => {
     expect(css).toContain("--pdf-body-size: 14pt");
     expect(css).toContain("--pdf-code-size: 12pt");
     expect(css).toMatch(/\.code-block pre[^}]*ui-monospace/);
+    expect(css).toMatch(/\.code-block pre[^}]*font-weight:\s*400/);
+    expect(css).toMatch(/\.inline-code[^}]*font-weight:\s*400/);
+  });
+
+  it("maps text thickness while keeping semantic bold stronger", () => {
+    expect(getTextWeightValues("light")).toEqual({ body: "300", bold: "700" });
+    expect(getTextWeightValues("regular")).toEqual({ body: "400", bold: "700" });
+    expect(getTextWeightValues("medium")).toEqual({ body: "500", bold: "700" });
+    expect(getTextWeightValues("semibold")).toEqual({ body: "600", bold: "800" });
+
+    const medium = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "medium" });
+    expect(medium).toContain("--pdf-body-weight: 500");
+    expect(medium).toContain("--pdf-bold-weight: 700");
+    expect(medium).toContain(".message-body strong, .message-body b { font-weight: var(--pdf-bold-weight); }");
+
+    const semibold = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "semibold" });
+    expect(semibold).toContain("--pdf-body-weight: 600");
+    expect(semibold).toContain("--pdf-bold-weight: 800");
+  });
+
+  it("applies body thickness to prose rather than the entire document", () => {
+    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "light" });
+    expect(css).toContain(".message-body p, .message-body li, .message-body blockquote, .message-body td { font-weight: var(--pdf-body-weight); }");
+    expect(css).not.toMatch(/\.export-document[^}]*font-weight:\s*var\(--pdf-body-weight\)/);
+    expect(css).toContain(".document-title");
+    expect(css).toMatch(/h1,h2,h3,h4,h5,h6[^}]*font-weight:\s*700/);
+    expect(css).toMatch(/th \{[^}]*font-weight:\s*700/);
   });
 
   it("applies message, paragraph and line spacing through centralized variables", () => {
@@ -140,6 +168,7 @@ describe("PDF document renderer", () => {
       ...DEFAULT_EXPORT_PREFERENCES,
       bodyFontFamily: "Arial; color:red" as never,
       bodyFontSize: 500,
+      textWeight: "900; color:red" as never,
       codeFontSize: -20,
       marginPreset: "custom" as const,
       customMargins: { top: -5, right: 100, bottom: 15, left: 15 }
@@ -147,14 +176,17 @@ describe("PDF document renderer", () => {
     const css = buildPrintStyles(unsafe);
     expect(css).not.toContain("color:red");
     expect(css).toContain("--pdf-body-size: 18pt");
+    expect(css).toContain("--pdf-body-weight: 400");
     expect(css).toContain("--pdf-code-size: 8pt");
     expect(css).toContain("margin: 5mm 40mm 15mm 15mm");
   });
 
-  it("does not globally override KaTeX fonts when body typography changes", () => {
-    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, bodyFontFamily: "times", bodyFontSize: 18 });
+  it("does not apply body thickness or body fonts globally to KaTeX", () => {
+    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, bodyFontFamily: "times", bodyFontSize: 18, textWeight: "semibold" });
+    expect(css).toContain(".math { max-width: 100%; font-weight: 400; }");
     expect(css).toContain(".math .katex { font-size: 1.06em; color: inherit; }");
     expect(css).not.toMatch(/\.math \.katex[^}]*font-family/);
+    expect(css).not.toMatch(/\.math \.katex[^}]*var\(--pdf-body-weight\)/);
     expect(css).not.toMatch(/\.export-document \*[^}]*font-family/);
   });
 });
