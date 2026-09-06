@@ -124,29 +124,75 @@ describe("PDF document renderer", () => {
     expect(css).toMatch(/\.inline-code[^}]*font-weight:\s*400/);
   });
 
-  it("maps text thickness while keeping semantic bold stronger", () => {
-    expect(getTextWeightValues("light")).toEqual({ body: "300", bold: "700" });
-    expect(getTextWeightValues("regular")).toEqual({ body: "400", bold: "700" });
-    expect(getTextWeightValues("medium")).toEqual({ body: "500", bold: "700" });
-    expect(getTextWeightValues("semibold")).toEqual({ body: "600", bold: "800" });
-
-    const medium = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "medium" });
-    expect(medium).toContain("--pdf-body-weight: 500");
-    expect(medium).toContain("--pdf-bold-weight: 700");
-    expect(medium).toContain(".message-body strong, .message-body b { font-weight: var(--pdf-bold-weight); }");
-
-    const semibold = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "semibold" });
-    expect(semibold).toContain("--pdf-body-weight: 600");
-    expect(semibold).toContain("--pdf-bold-weight: 800");
+  it("shifts every semantic text weight relative to the regular 400 baseline", () => {
+    expect(getTextWeightValues("regular")).toEqual({
+      body: "400", bold: "700", heading: "700", title: "700", tableHeader: "700", role: "750", meta: "400", codeLabel: "600"
+    });
+    expect(getTextWeightValues("light")).toEqual({
+      body: "300", bold: "600", heading: "600", title: "600", tableHeader: "600", role: "650", meta: "300", codeLabel: "500"
+    });
+    expect(getTextWeightValues("medium")).toEqual({
+      body: "500", bold: "800", heading: "800", title: "800", tableHeader: "800", role: "850", meta: "500", codeLabel: "700"
+    });
+    expect(getTextWeightValues("semibold")).toEqual({
+      body: "600", bold: "900", heading: "900", title: "900", tableHeader: "900", role: "900", meta: "600", codeLabel: "800"
+    });
+    expect(getTextWeightValues("bold")).toEqual({
+      body: "700", bold: "900", heading: "900", title: "900", tableHeader: "900", role: "900", meta: "700", codeLabel: "900"
+    });
+    expect(getTextWeightValues("extrabold")).toEqual({
+      body: "800", bold: "900", heading: "900", title: "900", tableHeader: "900", role: "900", meta: "800", codeLabel: "900"
+    });
   });
 
-  it("applies body thickness to prose rather than the entire document", () => {
-    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "light" });
-    expect(css).toContain(".message-body p, .message-body li, .message-body blockquote, .message-body td { font-weight: var(--pdf-body-weight); }");
-    expect(css).not.toMatch(/\.export-document[^}]*font-weight:\s*var\(--pdf-body-weight\)/);
-    expect(css).toContain(".document-title");
-    expect(css).toMatch(/h1,h2,h3,h4,h5,h6[^}]*font-weight:\s*700/);
-    expect(css).toMatch(/th \{[^}]*font-weight:\s*700/);
+  it("supports custom relative thickness without flattening semantic hierarchy", () => {
+    expect(getTextWeightValues("custom", 550)).toEqual({
+      body: "550", bold: "850", heading: "850", title: "850", tableHeader: "850", role: "900", meta: "550", codeLabel: "750"
+    });
+    expect(getTextWeightValues("custom", 350)).toEqual({
+      body: "350", bold: "650", heading: "650", title: "650", tableHeader: "650", role: "700", meta: "350", codeLabel: "550"
+    });
+
+    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "custom", customTextWeight: 550 });
+    expect(css).toContain("--pdf-body-weight: 550");
+    expect(css).toContain("--pdf-bold-weight: 850");
+    expect(css).toContain("--pdf-heading-weight: 850");
+    expect(css).toContain("--pdf-title-weight: 850");
+    expect(css).toContain("--pdf-table-header-weight: 850");
+    expect(css).toContain("--pdf-role-weight: 900");
+    expect(css).toContain("--pdf-meta-weight: 550");
+    expect(css).toContain("--pdf-code-label-weight: 750");
+  });
+
+  it("calculates relative weight from canonical values on every resolution", () => {
+    const first = getTextWeightValues("medium");
+    const second = getTextWeightValues("medium");
+    expect(first).toEqual(second);
+    expect(first.body).toBe("500");
+    expect(first.bold).toBe("800");
+  });
+
+  it("applies the relative shift globally to document text while preserving semantic weights", () => {
+    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "medium" });
+    expect(css).toMatch(/\.export-document \{[^}]*font-weight:\s*var\(--pdf-body-weight\)/);
+    expect(css).toContain(".message-body strong, .message-body b { font-weight: var(--pdf-bold-weight); }");
+    expect(css).toMatch(/\.document-title[^}]*font-weight:\s*var\(--pdf-title-weight\)/);
+    expect(css).toMatch(/h1,h2,h3,h4,h5,h6[^}]*font-weight:\s*var\(--pdf-heading-weight\)/);
+    expect(css).toMatch(/\.message-role[^}]*font-weight:\s*var\(--pdf-role-weight\)/);
+    expect(css).toMatch(/th \{[^}]*font-weight:\s*var\(--pdf-table-header-weight\)/);
+    expect(css).toMatch(/\.document-meta[^}]*font-weight:\s*var\(--pdf-meta-weight\)/);
+  });
+
+  it("clamps heavy relative semantic weights at 900", () => {
+    const extra = resolvePdfAppearance({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "extrabold" });
+    expect(extra.bodyFontWeight).toBe("800");
+    expect(extra.boldFontWeight).toBe("900");
+    expect(extra.headingFontWeight).toBe("900");
+    expect(extra.roleFontWeight).toBe("900");
+
+    const unsafeCustom = resolvePdfAppearance({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "custom", customTextWeight: 5000 });
+    expect(unsafeCustom.bodyFontWeight).toBe("800");
+    expect(unsafeCustom.boldFontWeight).toBe("900");
   });
 
   it("applies message, paragraph and line spacing through centralized variables", () => {
@@ -163,12 +209,13 @@ describe("PDF document renderer", () => {
     expect(css).toContain("--pdf-line-height: 1.7");
   });
 
-  it("rejects arbitrary font CSS and clamps unsafe appearance values at render time", () => {
+  it("rejects arbitrary font and thickness CSS and clamps unsafe appearance values at render time", () => {
     const unsafe = {
       ...DEFAULT_EXPORT_PREFERENCES,
       bodyFontFamily: "Arial; color:red" as never,
       bodyFontSize: 500,
       textWeight: "900; color:red" as never,
+      customTextWeight: 5000,
       codeFontSize: -20,
       marginPreset: "custom" as const,
       customMargins: { top: -5, right: 100, bottom: 15, left: 15 }
@@ -177,16 +224,27 @@ describe("PDF document renderer", () => {
     expect(css).not.toContain("color:red");
     expect(css).toContain("--pdf-body-size: 18pt");
     expect(css).toContain("--pdf-body-weight: 400");
+    expect(css).toContain("--pdf-bold-weight: 700");
     expect(css).toContain("--pdf-code-size: 8pt");
     expect(css).toContain("margin: 5mm 40mm 15mm 15mm");
   });
 
-  it("does not apply body thickness or body fonts globally to KaTeX", () => {
-    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, bodyFontFamily: "times", bodyFontSize: 18, textWeight: "semibold" });
+  it("keeps source code and inline code outside the global relative shift", () => {
+    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, textWeight: "custom", customTextWeight: 650 });
+    expect(css).toContain("--pdf-body-weight: 650");
+    expect(css).toContain("--pdf-bold-weight: 900");
+    expect(css).toMatch(/\.code-block pre[^}]*font-weight:\s*400/);
+    expect(css).toMatch(/\.inline-code[^}]*font-weight:\s*400/);
+    expect(css).toMatch(/\.code-label[^}]*font-weight:\s*var\(--pdf-code-label-weight\)/);
+  });
+
+  it("does not apply shifted body thickness or body fonts to KaTeX", () => {
+    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, bodyFontFamily: "times", bodyFontSize: 18, textWeight: "custom", customTextWeight: 650 });
     expect(css).toContain(".math { max-width: 100%; font-weight: 400; }");
     expect(css).toContain(".math .katex { font-size: 1.06em; color: inherit; }");
     expect(css).not.toMatch(/\.math \.katex[^}]*font-family/);
     expect(css).not.toMatch(/\.math \.katex[^}]*var\(--pdf-body-weight\)/);
+    expect(css).not.toMatch(/\.math[^}]*var\(--pdf-body-weight\)/);
     expect(css).not.toMatch(/\.export-document \*[^}]*font-family/);
   });
 });
