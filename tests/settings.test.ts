@@ -23,17 +23,34 @@ describe("export preference storage", () => {
     expect(value.pdfTheme).toBe("light");
     expect(value.includeSourceUrl).toBe(true);
     expect(value.wrapCode).toBe(true);
+    expect(value.excludeUserMessages).toBe(false);
   });
 
-  it("persists and reloads settings", async () => {
-    const changed = { ...DEFAULT_EXPORT_PREFERENCES, pageSize: "Letter" as const, messageFilter: "assistant" as const };
+  it("migrates older assistant-only preferences to exclude my prompts", () => {
+    const value = normalizeExportPreferences({ messageFilter: "assistant" });
+    expect(value.messageFilter).toBe("assistant");
+    expect(value.excludeUserMessages).toBe(true);
+  });
+
+  it("persists and reloads exclude my prompts", async () => {
+    const changed = {
+      ...DEFAULT_EXPORT_PREFERENCES,
+      pageSize: "Letter" as const,
+      messageFilter: "assistant" as const,
+      excludeUserMessages: true
+    };
     await saveExportPreferences(changed);
     expect(await getExportPreferences()).toEqual(changed);
   });
 
-  it("resets to defaults", async () => {
-    await saveExportPreferences({ ...DEFAULT_EXPORT_PREFERENCES, pdfTheme: "dark" });
+  it("resets exclude my prompts to off", async () => {
+    await saveExportPreferences({
+      ...DEFAULT_EXPORT_PREFERENCES,
+      pdfTheme: "dark",
+      messageFilter: "assistant",
+      excludeUserMessages: true
+    });
     expect(await resetExportPreferences()).toEqual(DEFAULT_EXPORT_PREFERENCES);
-    expect(await getExportPreferences()).toEqual(DEFAULT_EXPORT_PREFERENCES);
+    expect((await getExportPreferences()).excludeUserMessages).toBe(false);
   });
 });
