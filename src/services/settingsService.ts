@@ -1,4 +1,4 @@
-import { DEFAULT_EXPORT_PREFERENCES, type ExportPreferences } from "../types/preferences";
+import { DEFAULT_EXPORT_PREFERENCES, type CustomMargins, type ExportPreferences, type MarginPreset } from "../types/preferences";
 
 const STORAGE_KEY = "exportPreferencesV1";
 const STORAGE_VERSION = 1;
@@ -16,6 +16,27 @@ function boolValue(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function boundedNumber(value: unknown, min: number, max: number, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+}
+
+function normalizeMargins(value: unknown): CustomMargins {
+  const source = value && typeof value === "object" ? value as Partial<CustomMargins> : {};
+  const fallback = DEFAULT_EXPORT_PREFERENCES.customMargins;
+  return {
+    top: boundedNumber(source.top, 5, 40, fallback.top),
+    right: boundedNumber(source.right, 5, 40, fallback.right),
+    bottom: boundedNumber(source.bottom, 5, 40, fallback.bottom),
+    left: boundedNumber(source.left, 5, 40, fallback.left)
+  };
+}
+
+function normalizeMarginPreset(value: unknown): MarginPreset {
+  // "comfortable" was the previous widest preset; migrate it to the new "wide" option.
+  if (value === "comfortable") return "wide";
+  return enumValue(value, ["compact", "normal", "wide", "custom"] as const, DEFAULT_EXPORT_PREFERENCES.marginPreset);
+}
+
 export function normalizeExportPreferences(input?: Partial<ExportPreferences> | null): ExportPreferences {
   const value = input ?? {};
   const messageFilter = enumValue(value.messageFilter, ["all", "user", "assistant"] as const, DEFAULT_EXPORT_PREFERENCES.messageFilter);
@@ -31,7 +52,15 @@ export function normalizeExportPreferences(input?: Partial<ExportPreferences> | 
     codeTheme: enumValue(value.codeTheme, ["light", "dark"] as const, DEFAULT_EXPORT_PREFERENCES.codeTheme),
     wrapCode: boolValue(value.wrapCode, DEFAULT_EXPORT_PREFERENCES.wrapCode),
     showCodeLanguage: boolValue(value.showCodeLanguage, DEFAULT_EXPORT_PREFERENCES.showCodeLanguage),
-    marginPreset: enumValue(value.marginPreset, ["compact", "normal", "comfortable"] as const, DEFAULT_EXPORT_PREFERENCES.marginPreset)
+    marginPreset: normalizeMarginPreset(value.marginPreset),
+    customMargins: normalizeMargins(value.customMargins),
+    messagePadding: enumValue(value.messagePadding, ["compact", "normal", "spacious"] as const, DEFAULT_EXPORT_PREFERENCES.messagePadding),
+    messageSpacing: enumValue(value.messageSpacing, ["compact", "normal", "spacious"] as const, DEFAULT_EXPORT_PREFERENCES.messageSpacing),
+    paragraphSpacing: enumValue(value.paragraphSpacing, ["compact", "normal", "spacious"] as const, DEFAULT_EXPORT_PREFERENCES.paragraphSpacing),
+    lineSpacing: enumValue(value.lineSpacing, ["compact", "normal", "relaxed"] as const, DEFAULT_EXPORT_PREFERENCES.lineSpacing),
+    bodyFontFamily: enumValue(value.bodyFontFamily, ["system", "arial", "georgia", "times", "verdana", "tahoma", "trebuchet"] as const, DEFAULT_EXPORT_PREFERENCES.bodyFontFamily),
+    bodyFontSize: boundedNumber(value.bodyFontSize, 9, 18, DEFAULT_EXPORT_PREFERENCES.bodyFontSize),
+    codeFontSize: boundedNumber(value.codeFontSize, 8, 16, DEFAULT_EXPORT_PREFERENCES.codeFontSize)
   };
 }
 
@@ -48,7 +77,7 @@ export async function saveExportPreferences(preferences: ExportPreferences): Pro
 }
 
 export async function resetExportPreferences(): Promise<ExportPreferences> {
-  const preferences = { ...DEFAULT_EXPORT_PREFERENCES };
+  const preferences = { ...DEFAULT_EXPORT_PREFERENCES, customMargins: { ...DEFAULT_EXPORT_PREFERENCES.customMargins } };
   await saveExportPreferences(preferences);
   return preferences;
 }
