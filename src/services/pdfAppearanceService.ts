@@ -1,4 +1,4 @@
-import type { BodyFontFamily, ExportPreferences, SpacingPreset } from "../types/preferences";
+import type { BodyFontFamily, ExportPreferences, SpacingPreset, TextWeight } from "../types/preferences";
 
 export interface ResolvedPdfAppearance {
   marginTop: string;
@@ -11,6 +11,8 @@ export interface ResolvedPdfAppearance {
   lineHeight: string;
   bodyFontFamily: string;
   bodyFontSize: string;
+  bodyFontWeight: string;
+  boldFontWeight: string;
   codeFontSize: string;
 }
 
@@ -22,6 +24,13 @@ const FONT_STACKS: Record<BodyFontFamily, string> = {
   verdana: 'Verdana, Geneva, sans-serif',
   tahoma: 'Tahoma, Arial, sans-serif',
   trebuchet: '"Trebuchet MS", Arial, sans-serif'
+};
+
+const TEXT_WEIGHTS: Record<TextWeight, { body: string; bold: string }> = {
+  light: { body: "300", bold: "700" },
+  regular: { body: "400", bold: "700" },
+  medium: { body: "500", bold: "700" },
+  semibold: { body: "600", bold: "800" }
 };
 
 const MESSAGE_PADDING: Record<SpacingPreset, string> = {
@@ -56,6 +65,12 @@ function fontStack(value: unknown): string {
     : FONT_STACKS.system;
 }
 
+function textWeights(value: unknown): { body: string; bold: string } {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(TEXT_WEIGHTS, value)
+    ? TEXT_WEIGHTS[value as TextWeight]
+    : TEXT_WEIGHTS.regular;
+}
+
 function margins(preferences: ExportPreferences): [number, number, number, number] {
   if (preferences.marginPreset === "compact") return [8, 10, 8, 10];
   if (preferences.marginPreset === "wide") return [22, 24, 22, 24];
@@ -74,6 +89,7 @@ function margins(preferences: ExportPreferences): [number, number, number, numbe
 export function resolvePdfAppearance(preferences: ExportPreferences): ResolvedPdfAppearance {
   const [top, right, bottom, left] = margins(preferences);
   const lineHeight = preferences.lineSpacing === "compact" ? "1.35" : preferences.lineSpacing === "relaxed" ? "1.7" : "1.5";
+  const weights = textWeights(preferences.textWeight);
   return {
     marginTop: `${top}mm`,
     marginRight: `${right}mm`,
@@ -85,10 +101,16 @@ export function resolvePdfAppearance(preferences: ExportPreferences): ResolvedPd
     lineHeight,
     bodyFontFamily: fontStack(preferences.bodyFontFamily),
     bodyFontSize: `${clampNumber(preferences.bodyFontSize, 9, 18, 11)}pt`,
+    bodyFontWeight: weights.body,
+    boldFontWeight: weights.bold,
     codeFontSize: `${clampNumber(preferences.codeFontSize, 8, 16, 10)}pt`
   };
 }
 
 export function getBodyFontStack(font: BodyFontFamily): string {
   return FONT_STACKS[font];
+}
+
+export function getTextWeightValues(weight: TextWeight): { body: string; bold: string } {
+  return TEXT_WEIGHTS[weight];
 }
