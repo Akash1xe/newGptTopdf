@@ -67,6 +67,7 @@ export function ExportSettings({ preferences, onChange, advanced, onToggleAdvanc
             <div className="settings-subheading">Typography</div>
             <SelectField label="Font" value={preferences.bodyFontFamily} options={[{ value: "system", label: "System" }, { value: "arial", label: "Arial" }, { value: "georgia", label: "Georgia" }, { value: "times", label: "Times New Roman" }, { value: "verdana", label: "Verdana" }, { value: "tahoma", label: "Tahoma" }, { value: "trebuchet", label: "Trebuchet MS" }]} onChange={(value) => patch("bodyFontFamily", value)} />
             <NumberField label="Font size" value={preferences.bodyFontSize} min={9} max={18} unit="pt" onChange={(value) => patch("bodyFontSize", value)} />
+            <SelectField label="Text thickness" hint="Controls normal PDF text weight." value={preferences.textWeight} options={[{ value: "light", label: "Light" }, { value: "regular", label: "Regular" }, { value: "medium", label: "Medium" }, { value: "semibold", label: "Semi-bold" }]} onChange={(value) => patch("textWeight", value)} />
             <NumberField label="Code font size" value={preferences.codeFontSize} min={8} max={16} unit="pt" onChange={(value) => patch("codeFontSize", value)} />
           </div>
 
