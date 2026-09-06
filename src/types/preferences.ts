@@ -40,6 +40,10 @@ export interface ExportPreferences {
   codeFontSize: number;
 }
 
+/**
+ * Print-oriented defaults tuned for a dense technical document rather than a
+ * screenshot-like web layout. Users can still override every value in the UI.
+ */
 export const DEFAULT_EXPORT_PREFERENCES: ExportPreferences = {
   pdfTheme: "light",
   pageSize: "A4",
@@ -51,15 +55,15 @@ export const DEFAULT_EXPORT_PREFERENCES: ExportPreferences = {
   codeTheme: "light",
   wrapCode: true,
   showCodeLanguage: true,
-  marginPreset: "normal",
-  customMargins: { top: 15, right: 15, bottom: 15, left: 15 },
-  messagePadding: "normal",
-  messageSpacing: "normal",
-  paragraphSpacing: "normal",
-  lineSpacing: "normal",
+  marginPreset: "compact",
+  customMargins: { top: 11, right: 11, bottom: 11, left: 11 },
+  messagePadding: "compact",
+  messageSpacing: "compact",
+  paragraphSpacing: "compact",
+  lineSpacing: "compact",
   bodyFontFamily: "system",
-  bodyFontSize: 11,
+  bodyFontSize: 8,
   textWeight: "regular",
   customTextWeight: 400,
-  codeFontSize: 10
+  codeFontSize: 8
 };
