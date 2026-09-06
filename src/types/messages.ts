@@ -24,6 +24,10 @@ export interface ExtractionDiagnostics {
   roleNodeCount: number;
   turnShellCount: number;
   activeRoleCount: number;
+  mathSourceCount: number;
+  katexCount: number;
+  texAnnotationCount: number;
+  mathMlCount: number;
   streaming: boolean;
   url: string;
 }

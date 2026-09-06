@@ -1,7 +1,34 @@
-# Project Status
+# Project status — Phase 1 through Phase 5
 
-The source now contains the complete planned Phase 1–9 architecture for the ChatGPT to PDF extension, including extraction, structured parsing, code/math/media handling, long-thread reliability, PDF print rendering, preferences, production UI, security/privacy audits, and release tooling.
+Implemented scope matches the requested Phase 1–5 boundary. PDF rendering/export is intentionally not implemented yet.
 
-See `RELEASE_REPORT.md` for the authoritative verification status.
+## Validation completed in the build environment
 
-Current status: **implementation complete; release verification incomplete because this container cannot reach the npm registry and cannot perform a real Chrome production-install/PDF test.**
+- `tsc -p tsconfig.core.json` — PASS (strict normalized models, parser, ChatGPT provider, code and math extraction)
+- full `src/` TypeScript/TSX source syntax/type-shape validation with local dependency stubs — PASS
+- test source TypeScript syntax/type-shape validation with local Vitest stubs — PASS
+- `node --check scripts/build-extension.mjs` — PASS
+- manifest/file validation — PASS
+- runtime network API scan — PASS
+- `node scripts/validate-static.mjs` — PASS
+
+## Validation blocked by environment networking
+
+The current container cannot resolve `registry.npmjs.org` (`EAI_AGAIN`). Therefore the following dependency-backed commands could not be honestly completed here:
+
+- `npm install`
+- actual Vitest execution
+- actual Vite + esbuild production build
+
+On a machine with npm registry access, run:
+
+```bash
+npm install
+npm run check
+```
+
+Then load `dist/` from `chrome://extensions` → Developer mode → Load unpacked.
+
+## Known product limitation retained intentionally
+
+Long ChatGPT conversations can be virtualized: turn shells may exist while older message content is not mounted. This phase reports `possiblyPartial` instead of auto-scrolling. Controlled harvesting is reserved for the later reliability phase, consistent with the requested roadmap.

@@ -13,6 +13,10 @@ function diagnostics(): ExtractionDiagnostics {
     roleNodeCount: document.querySelectorAll(CHATGPT_SELECTORS.roleNodes).length,
     turnShellCount: document.querySelectorAll(CHATGPT_SELECTORS.turnShells).length,
     activeRoleCount: getRoleNodes(document).length,
+    mathSourceCount: document.querySelectorAll("[data-math-source], [data-latex], [data-tex], [data-math]").length,
+    katexCount: document.querySelectorAll(".katex, .katex-display").length,
+    texAnnotationCount: Array.from(document.querySelectorAll("annotation[encoding]")).filter((annotation) => /(?:tex|latex)/i.test(annotation.getAttribute("encoding") ?? "")).length,
+    mathMlCount: document.querySelectorAll("math").length,
     streaming: isConversationStreaming(document),
     url: location.href
   };

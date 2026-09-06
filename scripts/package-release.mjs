@@ -1,9 +1,10 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 
+const pkg = JSON.parse(await readFile("package.json", "utf8"));
 const outputDir = resolve("release");
-const output = resolve(outputDir, "chatgpt-to-pdf-v1.0.0.zip");
+const output = resolve(outputDir, `chatgpt-to-pdf-v${pkg.version}.zip`);
 await mkdir(outputDir, { recursive: true });
 await rm(output, { force: true });
 

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ChatGPT to PDF",
   "description": "Export ChatGPT conversations to clean PDFs while preserving code, tables, images, and mathematical formatting.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "action": {
     "default_popup": "popup.html",
     "default_title": "ChatGPT to PDF",

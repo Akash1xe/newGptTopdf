@@ -1,3 +1,4 @@
+import "katex/dist/katex.min.css";
 import { getPrintJob, removePrintJob } from "../services/printJobService";
 import { buildPrintStyles } from "../renderer/printStyles";
 import { renderConversation, safePdfTitle } from "../renderer/conversationRenderer";
@@ -14,6 +15,21 @@ function waitForImages(document: Document, timeoutMs = 3500): Promise<void> {
     });
     setTimeout(resolve, timeoutMs);
   });
+}
+
+async function waitForFonts(document: Document, timeoutMs = 4000): Promise<void> {
+  const fonts = document.fonts;
+  if (!fonts) return;
+  await Promise.race([
+    fonts.ready.then(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
+  ]);
+}
+
+async function waitForPrintAssets(document: Document): Promise<void> {
+  await Promise.all([waitForImages(document), waitForFonts(document)]);
+  // Give KaTeX one extra layout frame after its local fonts become available.
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 }
 
 async function boot(): Promise<void> {
@@ -46,7 +62,7 @@ async function boot(): Promise<void> {
 
   const doPrint = async () => {
     status.textContent = "Preparing print preview…";
-    await waitForImages(document);
+    await waitForPrintAssets(document);
     status.textContent = "Print preview opened. Choose “Save as PDF” to finish.";
     window.print();
   };

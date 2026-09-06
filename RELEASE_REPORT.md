@@ -1,4 +1,4 @@
-# Release Report — ChatGPT to PDF v1.0.0
+# Release Report — ChatGPT to PDF v1.0.1 candidate
 
 _Date: September 6, 2026_
 
@@ -9,6 +9,13 @@ _Date: September 6, 2026_
 The source implementation is integrated through the Phase 9 release-preparation layer and passes the static/source checks available in this container. However, npm registry DNS access is unavailable here (`EAI_AGAIN`), which prevents installation of the declared project dependencies. Therefore the real Vitest suite, full project `tsc` invocation with installed `@types/*`, Vite/esbuild production build, release-package validation, and real Chrome PDF tests cannot be honestly marked as passed.
 
 This is a verification blocker, not an assertion that those steps will fail.
+
+
+## Math rendering repair status
+
+The v1.0.1 candidate includes a targeted repair for the observed PDF math corruption. The patch preserves current ChatGPT `data-math-source`/TeX semantics, enforces the MathML namespace, renders TeX with locally bundled KaTeX, waits for KaTeX fonts before printing, and fixes display-math block classification. See `MATH_FIX_REPORT.md`.
+
+The repair has passed source/static TypeScript validation, but the actual Vitest/Vite/Chrome-PDF verification is still blocked by npm-registry DNS in this environment.
 
 ## 2. Major implementation completed
 
@@ -30,7 +37,7 @@ This is a verification blocker, not an assertion that those steps will fail.
 
 - Manifest: V3
 - Name: ChatGPT to PDF
-- Version: 1.0.0
+- Version: 1.0.1 candidate
 - Permissions: `activeTab`, `storage`
 - Content-script host: `https://chatgpt.com/*`
 - Background: MV3 service worker

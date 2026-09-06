@@ -57,11 +57,15 @@ hr { border: 0; border-top: 1px solid #e4e4e7; margin: 18px 0; }
 .code-theme-dark .code-label { background: #27272a; color: #d4d4d8; border-color: #3f3f46; }
 .tok-keyword,.tok-type,.tok-builtin { color: #7c3aed; } .tok-string,.tok-regex { color: #047857; } .tok-number,.tok-boolean { color: #b45309; } .tok-comment { color: #6b7280; font-style: italic; } .tok-function,.tok-class-name { color: #0369a1; } .tok-tag,.tok-attribute,.tok-property { color: #9f1239; }
 .code-theme-dark .tok-keyword,.code-theme-dark .tok-type,.code-theme-dark .tok-builtin { color: #c4b5fd; } .code-theme-dark .tok-string,.code-theme-dark .tok-regex { color: #6ee7b7; } .code-theme-dark .tok-number,.code-theme-dark .tok-boolean { color: #fbbf24; } .code-theme-dark .tok-comment { color: #a1a1aa; } .code-theme-dark .tok-function,.code-theme-dark .tok-class-name { color: #7dd3fc; } .code-theme-dark .tok-tag,.code-theme-dark .tok-attribute,.code-theme-dark .tok-property { color: #fda4af; }
-.math { font-family: "STIX Two Math", "Cambria Math", "Times New Roman", serif; }
-.math-inline { display: inline-block; vertical-align: -0.1em; max-width: 100%; }
-.math-block { display: block; margin: 12px 0; text-align: center; overflow-wrap: anywhere; break-inside: avoid-page; }
-.math math { max-width: 100%; font-size: 1.04em; }
-.math-fallback { font-family: "Cambria Math", "Times New Roman", serif; white-space: pre-wrap; }
+.math { max-width: 100%; }
+.math-inline { display: inline; vertical-align: baseline; }
+.math-block { display: block; margin: 12px 0; text-align: center; overflow: visible; break-inside: avoid-page; }
+.math .katex { font-size: 1.06em; color: inherit; }
+.math-inline > .katex { display: inline; }
+.math-block > .katex-display { margin: 0; overflow: visible; }
+.math .katex-html { white-space: nowrap; }
+.math math { max-width: 100%; }
+.math-fallback { font-family: "Cambria Math", "Times New Roman", serif; white-space: pre-wrap; overflow-wrap: anywhere; }
 .math-simple { display: inline-flex; align-items: baseline; }
 .math-radicand { border-top: 1px solid currentColor; padding: 0 2px; }
 .math-fraction { display: inline-grid; grid-template-rows: auto auto; vertical-align: middle; text-align: center; line-height: 1.12; }

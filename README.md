@@ -57,7 +57,7 @@ scripts/             build, static audit, release validation/package scripts
 tests/               parser, extraction, renderer, settings and reliability tests
 ```
 
-See `ARCHITECTURE.md` for more detail.
+See `ARCHITECTURE.md` for more detail. The targeted v1.0.1 math-rendering repair is documented in `MATH_FIX_REPORT.md`.
 
 ## Requirements
 

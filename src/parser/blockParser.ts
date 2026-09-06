@@ -9,7 +9,13 @@ function isInlineLike(node: Node, context: ParserContext): boolean {
   if (node.nodeType === Node.TEXT_NODE) return Boolean(node.textContent?.trim());
   if (!(node instanceof Element)) return false;
   if (context.isImageElement?.(node)) return false;
-  return INLINE_TAGS.has(node.tagName.toLowerCase()) || (context.isMathElement(node) && context.extractMathNode(node)?.displayMode === "inline");
+
+  // Math semantics take precedence over the HTML tag name. KaTeX display math
+  // commonly uses a <span class="katex-display"> wrapper. Treating every
+  // <span> as inline first would place a block MathNode inside a paragraph,
+  // producing invalid print structure and fragile pagination.
+  if (context.isMathElement(node)) return context.extractMathNode(node)?.displayMode === "inline";
+  return INLINE_TAGS.has(node.tagName.toLowerCase());
 }
 
 function parseList(list: Element, context: ParserContext): OrderedListBlock | UnorderedListBlock {

@@ -1,4 +1,4 @@
-# Release Checklist — v1.0.0
+# Release Checklist — v1.0.1 candidate
 
 ## Code
 
@@ -17,7 +17,7 @@
 ## Manifest
 
 - [x] Manifest V3.
-- [x] Version set to 1.0.0.
+- [x] Version set to 1.0.1 candidate.
 - [x] Permissions limited to `activeTab` and `storage`.
 - [x] Content-script scope limited to `https://chatgpt.com/*`.
 - [x] No `<all_urls>`.
@@ -31,6 +31,7 @@
 - [x] Structured parser implementation present.
 - [x] Code preservation/rendering implementation present.
 - [x] Math extraction/rendering/fallback implementation present.
+- [x] Math v1.0.1 source repair: current `data-math-source`, TeX annotation, MathML namespace, KaTeX print assets/fonts wait, display-math classification.
 - [x] Table rendering implementation present.
 - [x] Image/fallback implementation present.
 - [x] Long-thread controlled collection implementation present.
@@ -55,8 +56,8 @@
 - [ ] Code indentation/blank lines confirmed.
 - [ ] Long code-line behavior confirmed.
 - [ ] Table pagination confirmed.
-- [ ] Root/fraction/superscript/subscript confirmed.
-- [ ] Integral/summation/matrix confirmed.
+- [ ] Root/fraction/superscript/subscript confirmed in an ACTUAL generated PDF after v1.0.1 patch.
+- [ ] Integral/summation/matrix/quadratic formula confirmed in an ACTUAL generated PDF after v1.0.1 patch.
 - [ ] Unicode/Hindi/CJK sample confirmed.
 - [ ] Image rendering/fallback confirmed.
 
