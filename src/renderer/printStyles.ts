@@ -12,6 +12,8 @@ export function buildPrintStyles(preferences: ExportPreferences): string {
   font-size: 14px;
   --pdf-body-font: ${appearance.bodyFontFamily};
   --pdf-body-size: ${appearance.bodyFontSize};
+  --pdf-body-weight: ${appearance.bodyFontWeight};
+  --pdf-bold-weight: ${appearance.boldFontWeight};
   --pdf-code-size: ${appearance.codeFontSize};
   --pdf-line-height: ${appearance.lineHeight};
   --pdf-message-padding: ${appearance.messagePadding};
@@ -35,7 +37,7 @@ a { color: inherit; text-decoration: underline; text-underline-offset: 2px; over
 .export-document.theme-dark { background: #18181b; color: #f4f4f5; }
 .document-header { border-bottom: 1px solid #e4e4e7; padding-bottom: 1.25em; margin-bottom: 1.7em; }
 .theme-dark .document-header { border-color: #3f3f46; }
-.document-title { font-size: 1.85em; line-height: 1.2; letter-spacing: -.025em; margin: 0 0 .2em; }
+.document-title { font-size: 1.85em; line-height: 1.2; letter-spacing: -.025em; margin: 0 0 .2em; font-weight: 700; }
 .document-subtitle { color: #71717a; font-size: .78em; text-transform: uppercase; letter-spacing: .08em; }
 .theme-dark .document-subtitle, .theme-dark .document-meta { color: #a1a1aa; }
 .document-meta { margin-top: .7em; display: flex; flex-wrap: wrap; gap: .6em 1.2em; color: #71717a; font-size: .72em; }
@@ -47,8 +49,10 @@ a { color: inherit; text-decoration: underline; text-underline-offset: 2px; over
 .message-body { padding-block: var(--pdf-message-padding); }
 .message-body > :first-child { margin-top: 0; }
 .message-body > :last-child { margin-bottom: 0; }
+.message-body p, .message-body li, .message-body blockquote, .message-body td { font-weight: var(--pdf-body-weight); }
+.message-body strong, .message-body b { font-weight: var(--pdf-bold-weight); }
 p { margin: 0 0 var(--pdf-paragraph-gap); orphans: 2; widows: 2; }
-h1,h2,h3,h4,h5,h6 { line-height: 1.28; margin: 1.25em 0 .55em; break-after: avoid; page-break-after: avoid; }
+h1,h2,h3,h4,h5,h6 { line-height: 1.28; margin: 1.25em 0 .55em; break-after: avoid; page-break-after: avoid; font-weight: 700; }
 h1 { font-size: 1.65em; } h2 { font-size: 1.4em; } h3 { font-size: 1.22em; } h4 { font-size: 1.1em; } h5,h6 { font-size: 1em; }
 ul,ol { margin: .55em 0 .8em; padding-left: 1.8em; }
 li { margin: .2em 0; }
@@ -57,18 +61,18 @@ blockquote { margin: .8em 0; padding: .55em .9em; border-left: 3px solid #a1a1aa
 .theme-dark blockquote { background: #27272a; border-color: #71717a; }
 hr { border: 0; border-top: 1px solid #e4e4e7; margin: 1.2em 0; }
 .theme-dark hr { border-color: #3f3f46; }
-.inline-code { font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: .9em; background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 4px; padding: 1px 4px; }
+.inline-code { font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: .9em; font-weight: 400; background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 4px; padding: 1px 4px; }
 .theme-dark .inline-code { background: #27272a; border-color: #3f3f46; }
 .code-block { margin: .85em 0 1em; border: 1px solid #d4d4d8; border-radius: 8px; overflow: hidden; background: #fafafa; break-inside: auto; }
 .code-short { break-inside: avoid-page; }
 .code-label { padding: 6px 10px; border-bottom: 1px solid #e4e4e7; font: 600 10px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color: #52525b; background: #f4f4f5; }
-.code-block pre { margin: 0; padding: 11px 12px; font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: var(--pdf-code-size); line-height: 1.55; white-space: pre; tab-size: 4; }
+.code-block pre { margin: 0; padding: 11px 12px; font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: var(--pdf-code-size); font-weight: 400; line-height: 1.55; white-space: pre; tab-size: 4; }
 .code-block.code-wrap pre, .code-block.code-has-long-lines pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
 .code-theme-dark { background: #18181b; color: #f4f4f5; border-color: #3f3f46; }
 .code-theme-dark .code-label { background: #27272a; color: #d4d4d8; border-color: #3f3f46; }
 .tok-keyword,.tok-type,.tok-builtin { color: #7c3aed; } .tok-string,.tok-regex { color: #047857; } .tok-number,.tok-boolean { color: #b45309; } .tok-comment { color: #6b7280; font-style: italic; } .tok-function,.tok-class-name { color: #0369a1; } .tok-tag,.tok-attribute,.tok-property { color: #9f1239; }
 .code-theme-dark .tok-keyword,.code-theme-dark .tok-type,.code-theme-dark .tok-builtin { color: #c4b5fd; } .code-theme-dark .tok-string,.code-theme-dark .tok-regex { color: #6ee7b7; } .code-theme-dark .tok-number,.code-theme-dark .tok-boolean { color: #fbbf24; } .code-theme-dark .tok-comment { color: #a1a1aa; } .code-theme-dark .tok-function,.code-theme-dark .tok-class-name { color: #7dd3fc; } .code-theme-dark .tok-tag,.code-theme-dark .tok-attribute,.code-theme-dark .tok-property { color: #fda4af; }
-.math { max-width: 100%; }
+.math { max-width: 100%; font-weight: 400; }
 .math-inline { display: inline; vertical-align: baseline; }
 .math-block { display: block; margin: .8em 0; text-align: center; overflow: visible; break-inside: avoid-page; }
 .math .katex { font-size: 1.06em; color: inherit; }
