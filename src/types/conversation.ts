@@ -51,6 +51,7 @@ export interface ExtractionCompleteness {
   elapsedMs?: number;
   noProgressPasses?: number;
   topStabilityPasses?: number;
+  tailStabilityPasses?: number;
   reachedBeginning?: boolean;
   verifiedBeginning?: boolean;
   verifiedEnd?: boolean;
