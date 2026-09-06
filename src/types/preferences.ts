@@ -8,6 +8,8 @@ export interface ExportPreferences {
   pdfTheme: PdfTheme;
   pageSize: PageSize;
   messageFilter: MessageFilter;
+  /** Convenience preference for exporting only ChatGPT responses. */
+  excludeUserMessages: boolean;
   includeTitle: boolean;
   includeExportDate: boolean;
   includeSourceUrl: boolean;
@@ -21,6 +23,7 @@ export const DEFAULT_EXPORT_PREFERENCES: ExportPreferences = {
   pdfTheme: "light",
   pageSize: "A4",
   messageFilter: "all",
+  excludeUserMessages: false,
   includeTitle: true,
   includeExportDate: true,
   includeSourceUrl: false,
