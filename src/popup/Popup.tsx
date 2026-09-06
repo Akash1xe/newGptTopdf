@@ -5,7 +5,7 @@ import type { ExportPreferences } from "../types/preferences";
 import { DEFAULT_EXPORT_PREFERENCES } from "../types/preferences";
 import { EXTENSION_VERSION } from "../constants/version";
 import { getExportPreferences, resetExportPreferences, saveExportPreferences } from "../services/settingsService";
-import { exportConversationToPdf } from "../services/pdfExportService";
+import { exportConversationToPdf, NoExportableMessagesError } from "../services/pdfExportService";
 import { isChatGPTUrl, sendToTab } from "./chrome";
 import { Header } from "./components/Header";
 import { PageStatus } from "./components/PageStatus";
@@ -150,8 +150,12 @@ export function Popup() {
       await exportConversationToPdf(data, preferences);
       setExportStage("idle");
       setStatusMessage("Print page opened. Choose “Save as PDF” in Chrome’s print preview.");
-    } catch {
+    } catch (error) {
       setExportStage("failed");
+      if (error instanceof NoExportableMessagesError) {
+        setStatusMessage(error.message);
+        return;
+      }
       setStatusMessage("The PDF export could not be prepared. Retry full extraction.");
     }
   };
