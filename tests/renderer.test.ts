@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderConversation } from "../src/renderer/conversationRenderer";
 import { renderMath } from "../src/renderer/mathRenderer";
 import { buildPrintStyles } from "../src/renderer/printStyles";
+import { getBodyFontStack, resolvePdfAppearance } from "../src/services/pdfAppearanceService";
 import { DEFAULT_EXPORT_PREFERENCES } from "../src/types/preferences";
 import type { ConversationData } from "../src/types/conversation";
 import type { MathNode } from "../src/types/content";
@@ -101,5 +102,59 @@ describe("PDF document renderer", () => {
     expect(css).toContain("overflow: visible");
     expect(css).not.toMatch(/\.math-block[^}]*overflow:\s*hidden/);
     expect(buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, pageSize: "Letter" })).toContain("size: Letter");
+  });
+
+  it("resolves compact, wide and custom page margins safely", () => {
+    expect(resolvePdfAppearance({ ...DEFAULT_EXPORT_PREFERENCES, marginPreset: "compact" })).toMatchObject({ marginTop: "8mm", marginRight: "10mm" });
+    expect(resolvePdfAppearance({ ...DEFAULT_EXPORT_PREFERENCES, marginPreset: "wide" })).toMatchObject({ marginTop: "22mm", marginRight: "24mm" });
+    const custom = { ...DEFAULT_EXPORT_PREFERENCES, marginPreset: "custom" as const, customMargins: { top: 10, right: 12, bottom: 14, left: 16 } };
+    expect(buildPrintStyles(custom)).toContain("margin: 10mm 12mm 14mm 16mm");
+  });
+
+  it("maps local body fonts and keeps code explicitly monospace", () => {
+    expect(getBodyFontStack("georgia")).toContain("Georgia");
+    expect(getBodyFontStack("times")).toContain("Times New Roman");
+    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, bodyFontFamily: "georgia", bodyFontSize: 14, codeFontSize: 12 });
+    expect(css).toContain('--pdf-body-font: Georgia, "Times New Roman", serif');
+    expect(css).toContain("--pdf-body-size: 14pt");
+    expect(css).toContain("--pdf-code-size: 12pt");
+    expect(css).toMatch(/\.code-block pre[^}]*ui-monospace/);
+  });
+
+  it("applies message, paragraph and line spacing through centralized variables", () => {
+    const css = buildPrintStyles({
+      ...DEFAULT_EXPORT_PREFERENCES,
+      messagePadding: "spacious",
+      messageSpacing: "compact",
+      paragraphSpacing: "spacious",
+      lineSpacing: "relaxed"
+    });
+    expect(css).toContain("--pdf-message-padding: 15px");
+    expect(css).toContain("--pdf-message-gap: 10px");
+    expect(css).toContain("--pdf-paragraph-gap: 1em");
+    expect(css).toContain("--pdf-line-height: 1.7");
+  });
+
+  it("rejects arbitrary font CSS and clamps unsafe appearance values at render time", () => {
+    const unsafe = {
+      ...DEFAULT_EXPORT_PREFERENCES,
+      bodyFontFamily: "Arial; color:red" as never,
+      bodyFontSize: 500,
+      codeFontSize: -20,
+      marginPreset: "custom" as const,
+      customMargins: { top: -5, right: 100, bottom: 15, left: 15 }
+    };
+    const css = buildPrintStyles(unsafe);
+    expect(css).not.toContain("color:red");
+    expect(css).toContain("--pdf-body-size: 18pt");
+    expect(css).toContain("--pdf-code-size: 8pt");
+    expect(css).toContain("margin: 5mm 40mm 15mm 15mm");
+  });
+
+  it("does not globally override KaTeX fonts when body typography changes", () => {
+    const css = buildPrintStyles({ ...DEFAULT_EXPORT_PREFERENCES, bodyFontFamily: "times", bodyFontSize: 18 });
+    expect(css).toContain(".math .katex { font-size: 1.06em; color: inherit; }");
+    expect(css).not.toMatch(/\.math \.katex[^}]*font-family/);
+    expect(css).not.toMatch(/\.export-document \*[^}]*font-family/);
   });
 });
