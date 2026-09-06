@@ -5,7 +5,7 @@ export type MarginPreset = "compact" | "normal" | "wide" | "custom";
 export type SpacingPreset = "compact" | "normal" | "spacious";
 export type LineSpacingPreset = "compact" | "normal" | "relaxed";
 export type BodyFontFamily = "system" | "arial" | "georgia" | "times" | "verdana" | "tahoma" | "trebuchet";
-export type TextWeight = "light" | "regular" | "medium" | "semibold";
+export type TextWeight = "light" | "regular" | "medium" | "semibold" | "bold" | "extrabold" | "custom";
 export type CodeTheme = "light" | "dark";
 
 export interface CustomMargins {
@@ -36,6 +36,7 @@ export interface ExportPreferences {
   bodyFontFamily: BodyFontFamily;
   bodyFontSize: number;
   textWeight: TextWeight;
+  customTextWeight: number;
   codeFontSize: number;
 }
 
@@ -59,5 +60,6 @@ export const DEFAULT_EXPORT_PREFERENCES: ExportPreferences = {
   bodyFontFamily: "system",
   bodyFontSize: 11,
   textWeight: "regular",
+  customTextWeight: 400,
   codeFontSize: 10
 };
