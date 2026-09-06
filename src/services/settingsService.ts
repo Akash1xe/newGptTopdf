@@ -18,10 +18,13 @@ function boolValue(value: unknown, fallback: boolean): boolean {
 
 export function normalizeExportPreferences(input?: Partial<ExportPreferences> | null): ExportPreferences {
   const value = input ?? {};
+  const messageFilter = enumValue(value.messageFilter, ["all", "user", "assistant"] as const, DEFAULT_EXPORT_PREFERENCES.messageFilter);
   return {
     pdfTheme: enumValue(value.pdfTheme, ["light", "dark"] as const, DEFAULT_EXPORT_PREFERENCES.pdfTheme),
     pageSize: enumValue(value.pageSize, ["A4", "Letter"] as const, DEFAULT_EXPORT_PREFERENCES.pageSize),
-    messageFilter: enumValue(value.messageFilter, ["all", "user", "assistant"] as const, DEFAULT_EXPORT_PREFERENCES.messageFilter),
+    messageFilter,
+    // Preserve the intent of older stored "assistant only" preferences that predate this explicit toggle.
+    excludeUserMessages: boolValue(value.excludeUserMessages, messageFilter === "assistant"),
     includeTitle: boolValue(value.includeTitle, DEFAULT_EXPORT_PREFERENCES.includeTitle),
     includeExportDate: boolValue(value.includeExportDate, DEFAULT_EXPORT_PREFERENCES.includeExportDate),
     includeSourceUrl: boolValue(value.includeSourceUrl, DEFAULT_EXPORT_PREFERENCES.includeSourceUrl),
