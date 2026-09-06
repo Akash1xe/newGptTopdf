@@ -66,7 +66,7 @@ export function ExportSettings({ preferences, onChange, advanced, onToggleAdvanc
           <div className="settings-subsection">
             <div className="settings-subheading">Typography</div>
             <SelectField label="Font" value={preferences.bodyFontFamily} options={[{ value: "system", label: "System" }, { value: "arial", label: "Arial" }, { value: "georgia", label: "Georgia" }, { value: "times", label: "Times New Roman" }, { value: "verdana", label: "Verdana" }, { value: "tahoma", label: "Tahoma" }, { value: "trebuchet", label: "Trebuchet MS" }]} onChange={(value) => patch("bodyFontFamily", value)} />
-            <NumberField label="Font size" value={preferences.bodyFontSize} min={9} max={18} unit="pt" onChange={(value) => patch("bodyFontSize", value)} />
+            <NumberField label="Font size" value={preferences.bodyFontSize} min={8} max={18} unit="pt" onChange={(value) => patch("bodyFontSize", value)} />
             <SelectField
               label="Text thickness"
               hint="Shifts all document text weight while preserving bold differences."
