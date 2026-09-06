@@ -36,6 +36,9 @@ export type CompletenessReason =
   | "scroll-container-lost"
   | "identity-conflict"
   | "user-cancelled"
+  | "unresolved-gap"
+  | "continuity-unverified"
+  | "tail-missing"
   | "unknown";
 
 export type BeginningEvidence = "turn-ordinal" | "stable-top";
@@ -50,7 +53,16 @@ export interface ExtractionCompleteness {
   topStabilityPasses?: number;
   reachedBeginning?: boolean;
   verifiedBeginning?: boolean;
+  verifiedEnd?: boolean;
+  continuityVerified?: boolean;
   beginningEvidence?: BeginningEvidence;
+  turboIterations?: number;
+  recoveryIterations?: number;
+  gapsDetected?: number;
+  gapsRecovered?: number;
+  unresolvedGaps?: number;
+  uniqueParsedMessages?: number;
+  duplicateCandidatesSkipped?: number;
   oldestMessageId?: string;
   newestMessageId?: string;
 }
