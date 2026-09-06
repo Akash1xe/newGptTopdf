@@ -19,6 +19,7 @@ function progressMessage(event: ExtensionEvent): string {
   const { phase, messageCount, topStabilityPasses } = event.data;
   if (phase === "capturing") return `Loading full conversation… ${messageCount} messages collected.`;
   if (phase === "loading-older") return `Loading older messages… ${messageCount} messages collected.`;
+  if (phase === "recovering-gap") return `Recovering a possible missing section… ${messageCount} messages collected.`;
   if (phase === "verifying-start") {
     const pass = topStabilityPasses > 0 ? ` Stability check ${topStabilityPasses}/3.` : "";
     return `Verifying the beginning of the conversation… ${messageCount} messages collected.${pass}`;
@@ -130,10 +131,17 @@ export function Popup() {
 
       const data = response.data;
       setConversation(data);
-      if (data.completeness.state !== "complete" || data.completeness.verifiedBeginning !== true) {
+      const complete =
+        data.completeness.state === "complete"
+        && data.completeness.verifiedBeginning === true
+        && data.completeness.verifiedEnd !== false
+        && data.completeness.continuityVerified !== false
+        && (data.completeness.unresolvedGaps ?? 0) === 0;
+
+      if (!complete) {
         setExportStage("failed");
         const reason = data.completeness.reason ? ` Reason: ${data.completeness.reason.replaceAll("-", " ")}.` : "";
-        setStatusMessage(`Could not verify the full conversation. ${data.messageCount} messages were collected, but the beginning of the chat could not be confirmed.${reason}`);
+        setStatusMessage(`Could not verify the full conversation. ${data.messageCount} messages were collected, but a complete continuous history could not be confirmed.${reason}`);
         return;
       }
 
