@@ -1,4 +1,4 @@
-import type { BodyFontFamily, ExportPreferences, SpacingPreset, TextWeight } from "../types/preferences";
+import { DEFAULT_EXPORT_PREFERENCES, type BodyFontFamily, type ExportPreferences, type SpacingPreset, type TextWeight } from "../types/preferences";
 
 export interface ResolvedTextWeights {
   body: string;
@@ -138,12 +138,13 @@ function margins(preferences: ExportPreferences): [number, number, number, numbe
   if (preferences.marginPreset === "compact") return [8, 10, 8, 10];
   if (preferences.marginPreset === "wide") return [22, 24, 22, 24];
   if (preferences.marginPreset === "custom") {
-    const value = preferences.customMargins ?? { top: 15, right: 15, bottom: 15, left: 15 };
+    const fallback = DEFAULT_EXPORT_PREFERENCES.customMargins;
+    const value = preferences.customMargins ?? fallback;
     return [
-      clampNumber(value.top, 5, 40, 15),
-      clampNumber(value.right, 5, 40, 15),
-      clampNumber(value.bottom, 5, 40, 15),
-      clampNumber(value.left, 5, 40, 15)
+      clampNumber(value.top, 5, 40, fallback.top),
+      clampNumber(value.right, 5, 40, fallback.right),
+      clampNumber(value.bottom, 5, 40, fallback.bottom),
+      clampNumber(value.left, 5, 40, fallback.left)
     ];
   }
   return [15, 15, 15, 15];
@@ -163,7 +164,7 @@ export function resolvePdfAppearance(preferences: ExportPreferences): ResolvedPd
     paragraphSpacing: spacingValue(preferences.paragraphSpacing, PARAGRAPH_SPACING, "normal"),
     lineHeight,
     bodyFontFamily: fontStack(preferences.bodyFontFamily),
-    bodyFontSize: `${clampNumber(preferences.bodyFontSize, 9, 18, 11)}pt`,
+    bodyFontSize: `${clampNumber(preferences.bodyFontSize, 8, 18, DEFAULT_EXPORT_PREFERENCES.bodyFontSize)}pt`,
     bodyFontWeight: weights.body,
     boldFontWeight: weights.bold,
     headingFontWeight: weights.heading,
@@ -172,7 +173,7 @@ export function resolvePdfAppearance(preferences: ExportPreferences): ResolvedPd
     roleFontWeight: weights.role,
     metaFontWeight: weights.meta,
     codeLabelFontWeight: weights.codeLabel,
-    codeFontSize: `${clampNumber(preferences.codeFontSize, 8, 16, 10)}pt`
+    codeFontSize: `${clampNumber(preferences.codeFontSize, 8, 16, DEFAULT_EXPORT_PREFERENCES.codeFontSize)}pt`
   };
 }
 
