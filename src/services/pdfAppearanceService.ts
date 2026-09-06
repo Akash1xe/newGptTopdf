@@ -1,5 +1,16 @@
 import type { BodyFontFamily, ExportPreferences, SpacingPreset, TextWeight } from "../types/preferences";
 
+export interface ResolvedTextWeights {
+  body: string;
+  bold: string;
+  heading: string;
+  title: string;
+  tableHeader: string;
+  role: string;
+  meta: string;
+  codeLabel: string;
+}
+
 export interface ResolvedPdfAppearance {
   marginTop: string;
   marginRight: string;
@@ -13,6 +24,12 @@ export interface ResolvedPdfAppearance {
   bodyFontSize: string;
   bodyFontWeight: string;
   boldFontWeight: string;
+  headingFontWeight: string;
+  titleFontWeight: string;
+  tableHeaderFontWeight: string;
+  roleFontWeight: string;
+  metaFontWeight: string;
+  codeLabelFontWeight: string;
   codeFontSize: string;
 }
 
@@ -26,12 +43,31 @@ const FONT_STACKS: Record<BodyFontFamily, string> = {
   trebuchet: '"Trebuchet MS", Arial, sans-serif'
 };
 
-const TEXT_WEIGHTS: Record<TextWeight, { body: string; bold: string }> = {
-  light: { body: "300", bold: "700" },
-  regular: { body: "400", bold: "700" },
-  medium: { body: "500", bold: "700" },
-  semibold: { body: "600", bold: "800" }
+const STANDARD_BASE_WEIGHT = 400;
+const MIN_FONT_WEIGHT = 100;
+const MAX_FONT_WEIGHT = 900;
+const MIN_CUSTOM_TEXT_WEIGHT = 100;
+const MAX_CUSTOM_TEXT_WEIGHT = 800;
+
+const TEXT_WEIGHT_BASELINES: Record<Exclude<TextWeight, "custom">, number> = {
+  light: 300,
+  regular: 400,
+  medium: 500,
+  semibold: 600,
+  bold: 700,
+  extrabold: 800
 };
+
+const SEMANTIC_WEIGHTS = {
+  body: 400,
+  bold: 700,
+  heading: 700,
+  title: 700,
+  tableHeader: 700,
+  role: 750,
+  meta: 400,
+  codeLabel: 600
+} as const;
 
 const MESSAGE_PADDING: Record<SpacingPreset, string> = {
   compact: "4px",
@@ -65,10 +101,37 @@ function fontStack(value: unknown): string {
     : FONT_STACKS.system;
 }
 
-function textWeights(value: unknown): { body: string; bold: string } {
-  return typeof value === "string" && Object.prototype.hasOwnProperty.call(TEXT_WEIGHTS, value)
-    ? TEXT_WEIGHTS[value as TextWeight]
-    : TEXT_WEIGHTS.regular;
+function clampFontWeight(value: number): number {
+  return Math.min(MAX_FONT_WEIGHT, Math.max(MIN_FONT_WEIGHT, value));
+}
+
+function resolveBaseTextWeight(weight: unknown, customTextWeight: unknown): number {
+  if (weight === "custom") {
+    return clampNumber(customTextWeight, MIN_CUSTOM_TEXT_WEIGHT, MAX_CUSTOM_TEXT_WEIGHT, STANDARD_BASE_WEIGHT);
+  }
+  if (typeof weight === "string" && Object.prototype.hasOwnProperty.call(TEXT_WEIGHT_BASELINES, weight)) {
+    return TEXT_WEIGHT_BASELINES[weight as Exclude<TextWeight, "custom">];
+  }
+  return STANDARD_BASE_WEIGHT;
+}
+
+function shiftedWeight(canonicalWeight: number, delta: number): string {
+  return String(clampFontWeight(canonicalWeight + delta));
+}
+
+function resolveTextWeights(weight: unknown, customTextWeight: unknown): ResolvedTextWeights {
+  const selectedBaseWeight = resolveBaseTextWeight(weight, customTextWeight);
+  const delta = selectedBaseWeight - STANDARD_BASE_WEIGHT;
+  return {
+    body: shiftedWeight(SEMANTIC_WEIGHTS.body, delta),
+    bold: shiftedWeight(SEMANTIC_WEIGHTS.bold, delta),
+    heading: shiftedWeight(SEMANTIC_WEIGHTS.heading, delta),
+    title: shiftedWeight(SEMANTIC_WEIGHTS.title, delta),
+    tableHeader: shiftedWeight(SEMANTIC_WEIGHTS.tableHeader, delta),
+    role: shiftedWeight(SEMANTIC_WEIGHTS.role, delta),
+    meta: shiftedWeight(SEMANTIC_WEIGHTS.meta, delta),
+    codeLabel: shiftedWeight(SEMANTIC_WEIGHTS.codeLabel, delta)
+  };
 }
 
 function margins(preferences: ExportPreferences): [number, number, number, number] {
@@ -89,7 +152,7 @@ function margins(preferences: ExportPreferences): [number, number, number, numbe
 export function resolvePdfAppearance(preferences: ExportPreferences): ResolvedPdfAppearance {
   const [top, right, bottom, left] = margins(preferences);
   const lineHeight = preferences.lineSpacing === "compact" ? "1.35" : preferences.lineSpacing === "relaxed" ? "1.7" : "1.5";
-  const weights = textWeights(preferences.textWeight);
+  const weights = resolveTextWeights(preferences.textWeight, preferences.customTextWeight);
   return {
     marginTop: `${top}mm`,
     marginRight: `${right}mm`,
@@ -103,6 +166,12 @@ export function resolvePdfAppearance(preferences: ExportPreferences): ResolvedPd
     bodyFontSize: `${clampNumber(preferences.bodyFontSize, 9, 18, 11)}pt`,
     bodyFontWeight: weights.body,
     boldFontWeight: weights.bold,
+    headingFontWeight: weights.heading,
+    titleFontWeight: weights.title,
+    tableHeaderFontWeight: weights.tableHeader,
+    roleFontWeight: weights.role,
+    metaFontWeight: weights.meta,
+    codeLabelFontWeight: weights.codeLabel,
     codeFontSize: `${clampNumber(preferences.codeFontSize, 8, 16, 10)}pt`
   };
 }
@@ -111,6 +180,6 @@ export function getBodyFontStack(font: BodyFontFamily): string {
   return FONT_STACKS[font];
 }
 
-export function getTextWeightValues(weight: TextWeight): { body: string; bold: string } {
-  return TEXT_WEIGHTS[weight];
+export function getTextWeightValues(weight: TextWeight, customTextWeight = STANDARD_BASE_WEIGHT): ResolvedTextWeights {
+  return resolveTextWeights(weight, customTextWeight);
 }
