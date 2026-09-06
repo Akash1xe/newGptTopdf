@@ -17,40 +17,79 @@ beforeEach(() => {
 });
 
 describe("export preference storage", () => {
-  it("normalizes invalid and partial settings", () => {
+  it("normalizes invalid and partial settings with appearance defaults", () => {
     const value = normalizeExportPreferences({ pageSize: "Letter", pdfTheme: "wrong" as never, includeSourceUrl: true });
     expect(value.pageSize).toBe("Letter");
     expect(value.pdfTheme).toBe("light");
     expect(value.includeSourceUrl).toBe(true);
     expect(value.wrapCode).toBe(true);
     expect(value.excludeUserMessages).toBe(false);
+    expect(value.marginPreset).toBe("normal");
+    expect(value.customMargins).toEqual({ top: 15, right: 15, bottom: 15, left: 15 });
+    expect(value.bodyFontFamily).toBe("system");
+    expect(value.bodyFontSize).toBe(11);
+    expect(value.codeFontSize).toBe(10);
+    expect(value.lineSpacing).toBe("normal");
   });
 
-  it("migrates older assistant-only preferences to exclude my prompts", () => {
-    const value = normalizeExportPreferences({ messageFilter: "assistant" });
+  it("migrates older assistant-only and comfortable-margin preferences", () => {
+    const value = normalizeExportPreferences({ messageFilter: "assistant", marginPreset: "comfortable" as never });
     expect(value.messageFilter).toBe("assistant");
     expect(value.excludeUserMessages).toBe(true);
+    expect(value.marginPreset).toBe("wide");
   });
 
-  it("persists and reloads exclude my prompts", async () => {
+  it("clamps unsafe typography and custom margin values", () => {
+    const value = normalizeExportPreferences({
+      bodyFontFamily: "bad-font; color:red" as never,
+      bodyFontSize: 1000,
+      codeFontSize: -5,
+      marginPreset: "custom",
+      customMargins: { top: -10, right: 100, bottom: 12, left: 16 }
+    });
+    expect(value.bodyFontFamily).toBe("system");
+    expect(value.bodyFontSize).toBe(18);
+    expect(value.codeFontSize).toBe(8);
+    expect(value.customMargins).toEqual({ top: 5, right: 40, bottom: 12, left: 16 });
+  });
+
+  it("persists and reloads layout, typography and exclude-my-prompts settings", async () => {
     const changed = {
       ...DEFAULT_EXPORT_PREFERENCES,
       pageSize: "Letter" as const,
       messageFilter: "assistant" as const,
-      excludeUserMessages: true
+      excludeUserMessages: true,
+      marginPreset: "custom" as const,
+      customMargins: { top: 10, right: 12, bottom: 14, left: 16 },
+      messagePadding: "spacious" as const,
+      messageSpacing: "compact" as const,
+      paragraphSpacing: "spacious" as const,
+      lineSpacing: "relaxed" as const,
+      bodyFontFamily: "georgia" as const,
+      bodyFontSize: 14,
+      codeFontSize: 12
     };
     await saveExportPreferences(changed);
     expect(await getExportPreferences()).toEqual(changed);
   });
 
-  it("resets exclude my prompts to off", async () => {
+  it("resets all appearance settings and exclude-my-prompts to defaults", async () => {
     await saveExportPreferences({
       ...DEFAULT_EXPORT_PREFERENCES,
       pdfTheme: "dark",
       messageFilter: "assistant",
-      excludeUserMessages: true
+      excludeUserMessages: true,
+      marginPreset: "wide",
+      bodyFontFamily: "times",
+      bodyFontSize: 18,
+      codeFontSize: 16,
+      lineSpacing: "relaxed"
     });
     expect(await resetExportPreferences()).toEqual(DEFAULT_EXPORT_PREFERENCES);
-    expect((await getExportPreferences()).excludeUserMessages).toBe(false);
+    const restored = await getExportPreferences();
+    expect(restored.excludeUserMessages).toBe(false);
+    expect(restored.bodyFontFamily).toBe("system");
+    expect(restored.bodyFontSize).toBe(11);
+    expect(restored.marginPreset).toBe("normal");
   });
 });
