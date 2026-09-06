@@ -2,6 +2,7 @@ import type { BeginningEvidence, ConversationData, ConversationMessage, Extracti
 import type { ExtractionProgressData, ExtractionProgressPhase } from "../../types/messages";
 import { finalizeConversation, getRoleNodes } from "./chatgptExtractor";
 import { parseChatGPTMessage } from "./chatgptParser";
+import { CHATGPT_SELECTORS } from "./chatgptSelectors";
 import {
   conversationIdentityFromLocation,
   dispatchSyntheticScroll,
@@ -55,21 +56,19 @@ interface MountedMessageCandidate {
 
 interface CaptureResult {
   added: number;
-  parsed: number;
   skipped: number;
-  ids: string[];
+  snapshot: BatchSnapshot;
   oldestId?: string;
   newestId?: string;
-  minOrdinal?: number;
-  maxOrdinal?: number;
 }
 
-interface BatchSnapshot {
+export interface BatchSnapshot {
   ids: string[];
   ordinals: number[];
+  allOrdinalsReliable: boolean;
 }
 
-interface ContinuityCheck {
+export interface ContinuityCheck {
   status: "continuous" | "gap-suspected" | "unknown";
   overlapCount: number;
   missingOrdinalRanges: Array<{ from: number; to: number }>;
@@ -80,14 +79,26 @@ type CollectorMode = "turbo" | "recovery" | "verify";
 const DEFAULT_MAX_DURATION_MS = 180_000;
 const DEFAULT_NO_PROGRESS_LIMIT = 6;
 const DEFAULT_TOP_STABILITY_PASSES = 3;
+const TAIL_STABILITY_PASSES = 2;
 const FAST_SCROLL_RATIO = 3;
 const RECOVERY_SCROLL_RATIO = 0.85;
 const FAST_WAIT_STEPS = [220, 380, 650, 1_000] as const;
 const FAST_SETTLE_MS = 60;
 const RECOVERY_WAIT_MS = 700;
 const RECOVERY_SETTLE_MS = 100;
-const TOP_VERIFY_WAIT_MS = 320;
+const TAIL_VERIFY_WAIT_MS = 250;
+const TOP_EXPLICIT_WAIT_MS = 250;
+const TOP_WAIT_STEPS = [650, 1_000, 1_500] as const;
 const TOP_SETTLE_MS = 80;
+const TOP_TOLERANCE_PX = 2;
+const BOTTOM_TOLERANCE_PX = 3;
+const TURN_MUTATION_SELECTOR = [
+  CHATGPT_SELECTORS.roleNodes,
+  CHATGPT_SELECTORS.fallbackRoleNodes,
+  CHATGPT_SELECTORS.turnShells,
+  "[data-message-id]",
+  "[data-turn-id]"
+].join(",");
 
 function now(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -121,6 +132,20 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+function nodeTouchesConversationTurn(node: Node): boolean {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  const element = node as Element;
+  return element.matches(TURN_MUTATION_SELECTOR)
+    || Boolean(element.querySelector(TURN_MUTATION_SELECTOR))
+    || Boolean(element.closest(TURN_MUTATION_SELECTOR));
+}
+
+function mutationTouchesConversationTurn(mutation: MutationRecord): boolean {
+  if (mutation.type === "attributes") return nodeTouchesConversationTurn(mutation.target);
+  if (mutation.type !== "childList") return false;
+  return [...mutation.addedNodes, ...mutation.removedNodes].some(nodeTouchesConversationTurn);
+}
+
 function waitForConversationMutation(root: Node, timeoutMs: number, signal?: AbortSignal): Promise<"mutation" | "timeout"> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -146,11 +171,7 @@ function waitForConversationMutation(root: Node, timeoutMs: number, signal?: Abo
       reject(abortError());
     };
     const observer = new MutationObserver((mutations) => {
-      const relevant = mutations.some((mutation) =>
-        mutation.type === "childList"
-        || (mutation.type === "attributes" && ["data-message-author-role", "data-turn-id", "data-message-id", "data-testid", "hidden", "aria-hidden"].includes(mutation.attributeName ?? ""))
-      );
-      if (relevant) finish("mutation");
+      if (mutations.some(mutationTouchesConversationTurn)) finish("mutation");
     });
     observer.observe(root, {
       childList: true,
@@ -171,12 +192,18 @@ function emitProgress(
   topStabilityPasses: number,
   mode?: CollectorMode
 ): void {
-  options.onProgress?.({ phase, messageCount, iteration, topStabilityPasses, mode });
+  const progress: ExtractionProgressData = { phase, messageCount, iteration, topStabilityPasses };
+  if (mode) progress.mode = mode;
+  options.onProgress?.(progress);
 }
 
 function viewportTop(document: Document, scrollElement: HTMLElement): number {
   if (scrollElement === document.scrollingElement || scrollElement === document.documentElement || scrollElement === document.body) return 0;
   return scrollElement.getBoundingClientRect().top;
+}
+
+function distanceFromBottom(scrollElement: HTMLElement): number {
+  return Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight - scrollElement.scrollTop);
 }
 
 function captureScrollRestorePoint(document: Document, scrollElement: HTMLElement): ScrollRestorePoint {
@@ -220,8 +247,8 @@ async function restoreScrollPosition(document: Document, scrollElement: HTMLElem
   scrollElement.scrollTop = target;
   dispatchSyntheticScroll(document, scrollElement);
   try {
-    await Promise.race([waitForConversationMutation(scrollElement, 260), delay(260)]);
-    await delay(50);
+    await waitForConversationMutation(scrollElement, 240);
+    await delay(40);
   } catch {
     // Restoration is best-effort and must never mask the extraction result.
   }
@@ -244,41 +271,46 @@ export function mergeCollectedOrder(current: string[], snapshotIds: string[]): s
   if (!current.length) return [...snapshotIds];
   if (!snapshotIds.length) return [...current];
 
-  const positions = new Map(current.map((id, index) => [id, index] as const));
-  const overlap = snapshotIds.find((id) => positions.has(id));
-  if (!overlap) {
-    const currentSet = new Set(current);
-    return [...snapshotIds.filter((id) => !currentSet.has(id)), ...current];
-  }
-
   const currentSet = new Set(current);
-  const snapPivot = snapshotIds.indexOf(overlap);
-  const currentPivot = positions.get(overlap) ?? 0;
-  const before = snapshotIds.slice(0, snapPivot).filter((id) => !currentSet.has(id));
+  const overlapIndex = snapshotIds.findIndex((id) => currentSet.has(id));
+  if (overlapIndex < 0) return [...snapshotIds.filter((id) => !currentSet.has(id)), ...current];
+
+  const overlapId = snapshotIds[overlapIndex];
   const next = [...current];
-  next.splice(currentPivot, 0, ...before);
+  const overlapCurrentIndex = next.indexOf(overlapId);
+  const before = snapshotIds.slice(0, overlapIndex).filter((id) => !currentSet.has(id));
+  next.splice(overlapCurrentIndex, 0, ...before);
 
   const nextSet = new Set(next);
-  let insertionIndex = next.indexOf(overlap) + 1;
-  for (const id of snapshotIds.slice(snapPivot + 1)) {
+  let cursor = next.indexOf(overlapId) + 1;
+  for (const id of snapshotIds.slice(overlapIndex + 1)) {
     if (nextSet.has(id)) {
-      insertionIndex = next.indexOf(id) + 1;
+      const existingIndex = next.indexOf(id);
+      if (existingIndex >= cursor) cursor = existingIndex + 1;
       continue;
     }
-    next.splice(insertionIndex, 0, id);
+    next.splice(cursor, 0, id);
     nextSet.add(id);
-    insertionIndex++;
+    cursor++;
   }
   return next;
 }
 
 export function nextTopStabilityPasses(
   current: number,
-  observation: { atTop: boolean; added: number; oldestBefore?: string; oldestAfter?: string }
+  observation: {
+    atTop: boolean;
+    added: number;
+    oldestBefore?: string;
+    oldestAfter?: string;
+    heightBefore?: number;
+    heightAfter?: number;
+  }
 ): number {
   if (!observation.atTop) return 0;
   if (observation.added > 0) return 0;
   if (observation.oldestBefore !== observation.oldestAfter) return 0;
+  if (observation.heightBefore != null && observation.heightAfter != null && Math.abs(observation.heightAfter - observation.heightBefore) > 2) return 0;
   return current + 1;
 }
 
@@ -340,7 +372,7 @@ function captureUnseenMessages(
 ): { result: CaptureResult; order: string[] } {
   const candidates = discoverMountedMessageCandidates(document);
   const ids = candidates.map((candidate) => candidate.id);
-  let parsed = 0;
+  let added = 0;
   let skipped = 0;
 
   for (const candidate of candidates) {
@@ -352,7 +384,7 @@ function captureUnseenMessages(
     if (!message) continue;
     messageMap.set(candidate.id, message);
     collectedIds.add(candidate.id);
-    parsed++;
+    added++;
   }
 
   const order = mergeCollectedOrder(currentOrder, ids.filter((id) => collectedIds.has(id)));
@@ -362,30 +394,18 @@ function captureUnseenMessages(
 
   return {
     result: {
-      added: parsed,
-      parsed,
+      added,
       skipped,
-      ids,
+      snapshot: {
+        ids,
+        ordinals,
+        allOrdinalsReliable: candidates.length > 0 && ordinals.length === candidates.length
+      },
       oldestId: order[0],
-      newestId: order[order.length - 1],
-      minOrdinal: ordinals.length ? Math.min(...ordinals) : undefined,
-      maxOrdinal: ordinals.length ? Math.max(...ordinals) : undefined
+      newestId: order[order.length - 1]
     },
     order
   };
-}
-
-function snapshotFromCapture(capture: CaptureResult): BatchSnapshot {
-  return {
-    ids: capture.ids,
-    ordinals: []
-  };
-}
-
-function messageOrdinals(ids: string[], messageMap: Map<string, ConversationMessage>): number[] {
-  return ids
-    .map((id) => messageMap.get(id)?.sourceOrder)
-    .filter((value): value is number => Number.isSafeInteger(value));
 }
 
 export function detectOrdinalGaps(ordinals: number[]): Array<{ from: number; to: number }> {
@@ -399,33 +419,29 @@ export function detectOrdinalGaps(ordinals: number[]): Array<{ from: number; to:
   return gaps;
 }
 
-export function checkBatchContinuity(
-  previous: BatchSnapshot | undefined,
-  current: BatchSnapshot,
-  messageMap: Map<string, ConversationMessage>
-): ContinuityCheck {
+export function checkBatchContinuity(previous: BatchSnapshot | undefined, current: BatchSnapshot): ContinuityCheck {
   if (!previous || !previous.ids.length || !current.ids.length) {
     return { status: "unknown", overlapCount: 0, missingOrdinalRanges: [] };
   }
 
   const previousIds = new Set(previous.ids);
   const overlapCount = current.ids.reduce((count, id) => count + (previousIds.has(id) ? 1 : 0), 0);
-  const previousOrdinals = messageOrdinals(previous.ids, messageMap);
-  const currentOrdinals = messageOrdinals(current.ids, messageMap);
-  const combinedOrdinals = [...previousOrdinals, ...currentOrdinals];
-  const missingOrdinalRanges = detectOrdinalGaps(combinedOrdinals);
+  if (overlapCount > 0) return { status: "continuous", overlapCount, missingOrdinalRanges: [] };
 
-  if (previousOrdinals.length && currentOrdinals.length) {
-    const previousMin = Math.min(...previousOrdinals);
-    const currentMax = Math.max(...currentOrdinals);
+  if (previous.allOrdinalsReliable && current.allOrdinalsReliable && previous.ordinals.length && current.ordinals.length) {
+    const previousMin = Math.min(...previous.ordinals);
+    const currentMax = Math.max(...current.ordinals);
     if (currentMax >= previousMin - 1) {
-      return { status: "continuous", overlapCount, missingOrdinalRanges: [] };
+      return { status: "continuous", overlapCount: 0, missingOrdinalRanges: [] };
     }
-    return { status: "gap-suspected", overlapCount, missingOrdinalRanges };
+    return {
+      status: "gap-suspected",
+      overlapCount: 0,
+      missingOrdinalRanges: [{ from: currentMax + 1, to: previousMin - 1 }]
+    };
   }
 
-  if (overlapCount > 0) return { status: "continuous", overlapCount, missingOrdinalRanges: [] };
-  return { status: "gap-suspected", overlapCount: 0, missingOrdinalRanges };
+  return { status: "gap-suspected", overlapCount: 0, missingOrdinalRanges: [] };
 }
 
 function explicitBeginningEvidence(messages: ConversationMessage[]): BeginningEvidence | undefined {
@@ -440,23 +456,44 @@ function hasReliableCrossWindowIdentity(messages: ConversationMessage[], travers
 
 function sortCollectedMessages(order: string[], messageMap: Map<string, ConversationMessage>): ConversationMessage[] {
   const messages = order.map((id) => messageMap.get(id)).filter((message): message is ConversationMessage => Boolean(message));
-  const withOrdinals = messages.filter((message) => Number.isSafeInteger(message.sourceOrder));
-  if (withOrdinals.length === messages.length && messages.length > 0) {
+  if (messages.length > 0 && messages.every((message) => Number.isSafeInteger(message.sourceOrder))) {
     return [...messages].sort((a, b) => (a.sourceOrder as number) - (b.sourceOrder as number));
   }
   return messages;
 }
 
-function hasTail(messages: ConversationMessage[], initialTailIds: Set<string>): boolean {
-  if (!initialTailIds.size) return true;
+function hasTail(messages: ConversationMessage[], tailIds: Set<string>): boolean {
+  if (!tailIds.size) return false;
   const ids = new Set(messages.map((message) => message.id));
-  for (const id of initialTailIds) if (!ids.has(id)) return false;
+  for (const id of tailIds) if (!ids.has(id)) return false;
   return true;
 }
 
-function allKnownOrdinalGaps(messages: ConversationMessage[]): Array<{ from: number; to: number }> {
-  const ordinals = messages.map((message) => message.sourceOrder).filter((value): value is number => Number.isSafeInteger(value));
-  return ordinals.length >= 2 ? detectOrdinalGaps(ordinals) : [];
+function ordinalGapsWhenReliable(messages: ConversationMessage[]): Array<{ from: number; to: number }> {
+  if (!messages.length || !messages.every((message) => Number.isSafeInteger(message.sourceOrder))) return [];
+  return detectOrdinalGaps(messages.map((message) => message.sourceOrder as number));
+}
+
+function canUseMountedFastPath(messages: ConversationMessage[], verifiedEnd: boolean): boolean {
+  if (!verifiedEnd || !messages.length) return false;
+  if (!messages.every((message) => message.identityQuality === "strong" && Number.isSafeInteger(message.sourceOrder))) return false;
+  const ordinals = messages.map((message) => message.sourceOrder as number);
+  return Math.min(...ordinals) === 0 && detectOrdinalGaps(ordinals).length === 0;
+}
+
+async function rollbackAfterTurboGap(
+  document: Document,
+  scrollElement: HTMLElement,
+  safeTop: number,
+  waitMs: number,
+  settleMs: number,
+  signal?: AbortSignal
+): Promise<void> {
+  const range = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+  scrollElement.scrollTop = Math.min(Math.max(0, safeTop), range);
+  dispatchSyntheticScroll(document, scrollElement);
+  await waitForConversationMutation(scrollElement, waitMs, signal);
+  await delay(settleMs, signal);
 }
 
 export async function collectFullChatGPTConversation(
@@ -472,7 +509,7 @@ export async function collectFullChatGPTConversation(
   const maxDurationMs = options.maxDurationMs ?? DEFAULT_MAX_DURATION_MS;
   const noProgressLimit = options.noProgressLimit ?? DEFAULT_NO_PROGRESS_LIMIT;
   const requiredTopStabilityPasses = options.topStabilityPasses ?? DEFAULT_TOP_STABILITY_PASSES;
-  const fastWaitOverride = options.mutationWaitMs;
+  const waitOverride = options.mutationWaitMs;
   const settleOverride = options.settleMs;
   const capturedUrl = location.href;
   const capturedIdentity = conversationIdentityFromLocation(location);
@@ -482,7 +519,6 @@ export async function collectFullChatGPTConversation(
   }
 
   const restorePoint = captureScrollRestorePoint(document, scrollElement);
-  const initialTop = scrollElement.scrollTop;
   const messageMap = new Map<string, ConversationMessage>();
   const collectedIds = new Set<string>();
   let order: string[] = [];
@@ -490,10 +526,12 @@ export async function collectFullChatGPTConversation(
   let iterations = 0;
   let turboIterations = 0;
   let recoveryIterations = 0;
+  let duplicateCandidatesSkipped = 0;
   let verifiedBeginning = false;
   let verifiedEnd = false;
   let continuityVerified = true;
   let topStability = 0;
+  let tailStability = 0;
   let gapsDetected = 0;
   let gapsRecovered = 0;
   let unresolvedGaps = 0;
@@ -501,6 +539,8 @@ export async function collectFullChatGPTConversation(
   let beginningEvidence: BeginningEvidence | undefined;
   let adaptiveWaitIndex = 0;
   let previousBatch: BatchSnapshot | undefined;
+  let recoveryTarget: BatchSnapshot | undefined;
+  let mode: CollectorMode = "turbo";
   const started = now();
 
   const assertPageStable = () => {
@@ -516,110 +556,200 @@ export async function collectFullChatGPTConversation(
     }
   };
 
+  const checkSafetyBudget = () => {
+    if (now() - started >= maxDurationMs) {
+      partialReason = "timeout";
+      return false;
+    }
+    if (options.maxIterations != null && iterations >= options.maxIterations) {
+      partialReason = "load-limit";
+      return false;
+    }
+    return true;
+  };
+
   const capture = (): CaptureResult => {
     const captured = captureUnseenMessages(document, messageMap, collectedIds, order);
     order = captured.order;
+    duplicateCandidatesSkipped += captured.result.skipped;
     return captured.result;
   };
 
+  let tailIds = new Set<string>();
+
   try {
-    const initialCapture = capture();
-    const initialTailIds = new Set(initialCapture.ids.filter((id) => collectedIds.has(id)));
-    previousBatch = snapshotFromCapture(initialCapture);
+    let latest = capture();
     emitProgress(options, "capturing", messageMap.size, iterations, topStability, "turbo");
 
-    while (true) {
+    // First verify the current conversation tail. If the user opened the popup
+    // from the middle of a chat, quickly move to the bottom and capture newer
+    // virtualized turns before traversing history upward.
+    let newestBefore = latest.newestId;
+    while (tailStability < TAIL_STABILITY_PASSES) {
       assertPageStable();
-      if (now() - started >= maxDurationMs) {
-        partialReason = "timeout";
-        break;
-      }
-      if (options.maxIterations != null && iterations >= options.maxIterations) {
-        partialReason = "load-limit";
-        break;
-      }
-
+      if (!checkSafetyBudget()) break;
       iterations++;
+      const atBottomBefore = distanceFromBottom(scrollElement) <= BOTTOM_TOLERANCE_PX;
+      if (!atBottomBefore) {
+        scrollElement.scrollTop = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+        dispatchSyntheticScroll(document, scrollElement);
+      }
+      await waitForConversationMutation(scrollElement, waitOverride ?? TAIL_VERIFY_WAIT_MS, options.signal);
+      await delay(settleOverride ?? FAST_SETTLE_MS, options.signal);
+      assertPageStable();
+      latest = capture();
+      const atBottomAfter = distanceFromBottom(scrollElement) <= BOTTOM_TOLERANCE_PX;
+      if (atBottomAfter && latest.added === 0 && latest.newestId === newestBefore) tailStability++;
+      else tailStability = 0;
+      newestBefore = latest.newestId;
+      emitProgress(options, "capturing", messageMap.size, iterations, topStability, "turbo");
+    }
+
+    tailIds = new Set(latest.snapshot.ids.filter((id) => collectedIds.has(id)));
+    verifiedEnd = tailStability >= TAIL_STABILITY_PASSES && tailIds.size > 0;
+    previousBatch = latest.snapshot;
+
+    if (!partialReason) {
+      const mountedMessages = sortCollectedMessages(order, messageMap);
+      if (canUseMountedFastPath(mountedMessages, verifiedEnd)) {
+        verifiedBeginning = true;
+        beginningEvidence = "turn-ordinal";
+        continuityVerified = true;
+      }
+    }
+
+    while (!verifiedBeginning && !partialReason) {
+      assertPageStable();
+      if (!checkSafetyBudget()) break;
+      iterations++;
+
       const topBefore = scrollElement.scrollTop;
       const oldestBefore = order[0];
+      const heightBefore = scrollElement.scrollHeight;
 
-      if (topBefore <= 2) {
-        emitProgress(options, "verifying-start", messageMap.size, iterations, topStability, "verify");
-        await waitForConversationMutation(scrollElement, TOP_VERIFY_WAIT_MS, options.signal);
+      if (topBefore <= TOP_TOLERANCE_PX) {
+        if (recoveryTarget) {
+          partialReason = "unresolved-gap";
+          continuityVerified = false;
+          unresolvedGaps = Math.max(1, unresolvedGaps);
+          break;
+        }
+
+        mode = "verify";
+        const explicit = explicitBeginningEvidence(sortCollectedMessages(order, messageMap));
+        const topWait = waitOverride ?? (explicit
+          ? TOP_EXPLICIT_WAIT_MS
+          : TOP_WAIT_STEPS[Math.min(topStability, TOP_WAIT_STEPS.length - 1)]);
+        emitProgress(options, "verifying-start", messageMap.size, iterations, topStability, mode);
+        await waitForConversationMutation(scrollElement, topWait, options.signal);
         await delay(settleOverride ?? TOP_SETTLE_MS, options.signal);
         assertPageStable();
-        const latest = capture();
+        latest = capture();
         topStability = nextTopStabilityPasses(topStability, {
-          atTop: scrollElement.scrollTop <= 2,
+          atTop: scrollElement.scrollTop <= TOP_TOLERANCE_PX,
           added: latest.added,
           oldestBefore,
-          oldestAfter: order[0]
+          oldestAfter: order[0],
+          heightBefore,
+          heightAfter: scrollElement.scrollHeight
         });
         if (latest.added > 0) noProgress = 0;
         beginningEvidence = explicitBeginningEvidence(sortCollectedMessages(order, messageMap)) ?? beginningEvidence;
-        emitProgress(options, "verifying-start", messageMap.size, iterations, topStability, "verify");
+        emitProgress(options, "verifying-start", messageMap.size, iterations, topStability, mode);
         if (isVerifiedBeginning(topStability, requiredTopStabilityPasses)) {
           verifiedBeginning = true;
           beginningEvidence ??= "stable-top";
-          break;
         }
         continue;
       }
 
+      mode = recoveryTarget ? "recovery" : "turbo";
       topStability = 0;
-      const currentMode: CollectorMode = unresolvedGaps > 0 ? "recovery" : "turbo";
-      const ratio = currentMode === "turbo" ? FAST_SCROLL_RATIO : RECOVERY_SCROLL_RATIO;
-      const step = Math.max(scrollElement.clientHeight * ratio, currentMode === "turbo" ? 900 : 320);
+      const ratio = mode === "turbo" ? FAST_SCROLL_RATIO : RECOVERY_SCROLL_RATIO;
+      const step = Math.max(scrollElement.clientHeight * ratio, mode === "turbo" ? 900 : 320);
       const requestedTop = Math.max(0, topBefore - step);
-      emitProgress(options, currentMode === "recovery" ? "recovering-gap" : "loading-older", messageMap.size, iterations, topStability, currentMode);
+      const safeBatch = previousBatch;
+
+      emitProgress(options, mode === "recovery" ? "recovering-gap" : "loading-older", messageMap.size, iterations, topStability, mode);
       scrollElement.scrollTop = requestedTop;
       dispatchSyntheticScroll(document, scrollElement);
 
-      const waitMs = currentMode === "turbo"
-        ? (fastWaitOverride ?? FAST_WAIT_STEPS[Math.min(adaptiveWaitIndex, FAST_WAIT_STEPS.length - 1)])
-        : RECOVERY_WAIT_MS;
+      const waitMs = mode === "turbo"
+        ? (waitOverride ?? FAST_WAIT_STEPS[Math.min(adaptiveWaitIndex, FAST_WAIT_STEPS.length - 1)])
+        : (waitOverride ?? RECOVERY_WAIT_MS);
       await waitForConversationMutation(scrollElement, waitMs, options.signal);
-      await delay(settleOverride ?? (currentMode === "turbo" ? FAST_SETTLE_MS : RECOVERY_SETTLE_MS), options.signal);
+      await delay(settleOverride ?? (mode === "turbo" ? FAST_SETTLE_MS : RECOVERY_SETTLE_MS), options.signal);
       assertPageStable();
-
-      const latest = capture();
-      const currentBatch: BatchSnapshot = { ids: latest.ids, ordinals: messageOrdinals(latest.ids, messageMap) };
-      const continuity = checkBatchContinuity(previousBatch, currentBatch, messageMap);
-      const moved = Math.abs(scrollElement.scrollTop - topBefore) > 2;
+      latest = capture();
+      const currentBatch = latest.snapshot;
+      const continuity = checkBatchContinuity(previousBatch, currentBatch);
+      const moved = Math.abs(scrollElement.scrollTop - topBefore) > TOP_TOLERANCE_PX;
       const oldestChanged = oldestBefore !== order[0];
       const meaningfulProgress = latest.added > 0 || oldestChanged;
 
-      if (currentMode === "turbo") turboIterations++;
+      if (mode === "turbo") turboIterations++;
       else recoveryIterations++;
 
-      if (continuity.status === "gap-suspected") {
-        if (unresolvedGaps === 0) gapsDetected++;
+      if (mode === "turbo" && continuity.status === "gap-suspected") {
+        gapsDetected++;
         unresolvedGaps = Math.max(1, continuity.missingOrdinalRanges.length);
         continuityVerified = false;
+        recoveryTarget = currentBatch;
+        previousBatch = safeBatch;
         adaptiveWaitIndex = Math.min(adaptiveWaitIndex + 1, FAST_WAIT_STEPS.length - 1);
-      } else if (continuity.status === "continuous") {
-        if (unresolvedGaps > 0) gapsRecovered += unresolvedGaps;
-        unresolvedGaps = 0;
-        continuityVerified = true;
-        adaptiveWaitIndex = 0;
-      } else if (meaningfulProgress) {
-        adaptiveWaitIndex = 0;
-      } else {
-        adaptiveWaitIndex = Math.min(adaptiveWaitIndex + 1, FAST_WAIT_STEPS.length - 1);
+        await rollbackAfterTurboGap(
+          document,
+          scrollElement,
+          topBefore,
+          waitOverride ?? RECOVERY_WAIT_MS,
+          settleOverride ?? RECOVERY_SETTLE_MS,
+          options.signal
+        );
+        assertPageStable();
+        capture();
+        continue;
       }
 
-      noProgress = meaningfulProgress || moved ? 0 : noProgress + 1;
-      previousBatch = currentBatch.ids.length ? currentBatch : previousBatch;
+      if (mode === "recovery") {
+        if (continuity.status === "continuous") {
+          previousBatch = currentBatch;
+          noProgress = 0;
+          const bridge = recoveryTarget ? checkBatchContinuity(currentBatch, recoveryTarget) : undefined;
+          if (bridge?.status === "continuous") {
+            gapsRecovered++;
+            unresolvedGaps = 0;
+            continuityVerified = true;
+            recoveryTarget = undefined;
+            adaptiveWaitIndex = 0;
+          }
+        } else {
+          noProgress = meaningfulProgress ? 0 : noProgress + 1;
+        }
+      } else {
+        if (continuity.status === "continuous") {
+          previousBatch = currentBatch;
+          adaptiveWaitIndex = 0;
+        } else if (continuity.status === "unknown" && meaningfulProgress) {
+          previousBatch = currentBatch;
+          adaptiveWaitIndex = 0;
+        } else {
+          adaptiveWaitIndex = Math.min(adaptiveWaitIndex + 1, FAST_WAIT_STEPS.length - 1);
+        }
+        noProgress = meaningfulProgress || moved ? 0 : noProgress + 1;
+      }
 
-      if (noProgress >= noProgressLimit && scrollElement.scrollTop > 2) {
-        partialReason = unresolvedGaps > 0 ? "unresolved-gap" : "no-progress";
-        break;
+      if (noProgress >= noProgressLimit && scrollElement.scrollTop > TOP_TOLERANCE_PX) {
+        partialReason = recoveryTarget ? "unresolved-gap" : "no-progress";
+        if (recoveryTarget) {
+          continuityVerified = false;
+          unresolvedGaps = Math.max(1, unresolvedGaps);
+        }
       }
     }
 
     const messagesBeforeRestore = sortCollectedMessages(order, messageMap);
-    verifiedEnd = hasTail(messagesBeforeRestore, initialTailIds);
-    const ordinalGaps = allKnownOrdinalGaps(messagesBeforeRestore);
+    verifiedEnd = verifiedEnd && hasTail(messagesBeforeRestore, tailIds);
+    const ordinalGaps = ordinalGapsWhenReliable(messagesBeforeRestore);
     if (ordinalGaps.length > 0) {
       gapsDetected += ordinalGaps.length;
       unresolvedGaps = Math.max(unresolvedGaps, ordinalGaps.length);
@@ -627,13 +757,18 @@ export async function collectFullChatGPTConversation(
       partialReason ??= "unresolved-gap";
     }
     if (!verifiedEnd) partialReason ??= "tail-missing";
+    if (recoveryTarget) {
+      continuityVerified = false;
+      unresolvedGaps = Math.max(1, unresolvedGaps);
+      partialReason ??= "unresolved-gap";
+    }
   } finally {
     emitProgress(options, "restoring", messageMap.size, iterations, topStability, "verify");
     await restoreScrollPosition(document, scrollElement, restorePoint);
   }
 
   const messages = sortCollectedMessages(order, messageMap);
-  const traversedVirtualizedHistory = initialTop > 2 || turboIterations > 0 || recoveryIterations > 0;
+  const traversedVirtualizedHistory = turboIterations > 0 || recoveryIterations > 0;
   if (verifiedBeginning && !hasReliableCrossWindowIdentity(messages, traversedVirtualizedHistory)) {
     verifiedBeginning = false;
     continuityVerified = false;
@@ -647,49 +782,43 @@ export async function collectFullChatGPTConversation(
     && unresolvedGaps === 0
     && !partialReason;
 
+  const commonDiagnostics = {
+    iterations,
+    elapsedMs: Math.round(now() - started),
+    noProgressPasses: noProgress,
+    topStabilityPasses: topStability,
+    tailStabilityPasses: tailStability,
+    turboIterations,
+    recoveryIterations,
+    gapsDetected,
+    gapsRecovered,
+    unresolvedGaps,
+    uniqueParsedMessages: messageMap.size,
+    duplicateCandidatesSkipped,
+    oldestMessageId: messages[0]?.id,
+    newestMessageId: messages[messages.length - 1]?.id
+  };
+
   const completeness: ExtractionCompleteness = canMarkComplete
     ? {
         state: "complete",
-        iterations,
-        elapsedMs: Math.round(now() - started),
-        noProgressPasses: noProgress,
-        topStabilityPasses: topStability,
+        ...commonDiagnostics,
         reachedBeginning: true,
         verifiedBeginning: true,
         verifiedEnd: true,
         continuityVerified: true,
         beginningEvidence,
-        turboIterations,
-        recoveryIterations,
-        gapsDetected,
-        gapsRecovered,
-        unresolvedGaps: 0,
-        uniqueParsedMessages: messageMap.size,
-        duplicateCandidatesSkipped: Math.max(0, iterations - messageMap.size),
-        oldestMessageId: messages[0]?.id,
-        newestMessageId: messages[messages.length - 1]?.id
+        unresolvedGaps: 0
       }
     : {
         state: "known-partial",
+        ...commonDiagnostics,
         reason: partialReason ?? (continuityVerified ? "unknown" : "continuity-unverified"),
-        iterations,
-        elapsedMs: Math.round(now() - started),
-        noProgressPasses: noProgress,
-        topStabilityPasses: topStability,
         reachedBeginning: verifiedBeginning,
         verifiedBeginning: false,
         verifiedEnd,
         continuityVerified,
-        beginningEvidence,
-        turboIterations,
-        recoveryIterations,
-        gapsDetected,
-        gapsRecovered,
-        unresolvedGaps,
-        uniqueParsedMessages: messageMap.size,
-        duplicateCandidatesSkipped: 0,
-        oldestMessageId: messages[0]?.id,
-        newestMessageId: messages[messages.length - 1]?.id
+        beginningEvidence
       };
 
   return finalizeConversation(document, location, messages, completeness, capturedUrl);
