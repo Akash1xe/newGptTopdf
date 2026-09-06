@@ -1,8 +1,18 @@
 export type PdfTheme = "light" | "dark";
 export type PageSize = "A4" | "Letter";
 export type MessageFilter = "all" | "user" | "assistant";
-export type MarginPreset = "compact" | "normal" | "comfortable";
+export type MarginPreset = "compact" | "normal" | "wide" | "custom";
+export type SpacingPreset = "compact" | "normal" | "spacious";
+export type LineSpacingPreset = "compact" | "normal" | "relaxed";
+export type BodyFontFamily = "system" | "arial" | "georgia" | "times" | "verdana" | "tahoma" | "trebuchet";
 export type CodeTheme = "light" | "dark";
+
+export interface CustomMargins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
 
 export interface ExportPreferences {
   pdfTheme: PdfTheme;
@@ -17,6 +27,14 @@ export interface ExportPreferences {
   wrapCode: boolean;
   showCodeLanguage: boolean;
   marginPreset: MarginPreset;
+  customMargins: CustomMargins;
+  messagePadding: SpacingPreset;
+  messageSpacing: SpacingPreset;
+  paragraphSpacing: SpacingPreset;
+  lineSpacing: LineSpacingPreset;
+  bodyFontFamily: BodyFontFamily;
+  bodyFontSize: number;
+  codeFontSize: number;
 }
 
 export const DEFAULT_EXPORT_PREFERENCES: ExportPreferences = {
@@ -30,5 +48,13 @@ export const DEFAULT_EXPORT_PREFERENCES: ExportPreferences = {
   codeTheme: "light",
   wrapCode: true,
   showCodeLanguage: true,
-  marginPreset: "normal"
+  marginPreset: "normal",
+  customMargins: { top: 15, right: 15, bottom: 15, left: 15 },
+  messagePadding: "normal",
+  messageSpacing: "normal",
+  paragraphSpacing: "normal",
+  lineSpacing: "normal",
+  bodyFontFamily: "system",
+  bodyFontSize: 11,
+  codeFontSize: 10
 };
