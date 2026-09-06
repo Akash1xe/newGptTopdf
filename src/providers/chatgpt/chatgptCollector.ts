@@ -668,7 +668,7 @@ export async function collectFullChatGPTConversation(
       const ratio = mode === "turbo" ? FAST_SCROLL_RATIO : RECOVERY_SCROLL_RATIO;
       const step = Math.max(scrollElement.clientHeight * ratio, mode === "turbo" ? 900 : 320);
       const requestedTop = Math.max(0, topBefore - step);
-      const safeBatch = previousBatch;
+      const safeBatch: BatchSnapshot | undefined = previousBatch;
 
       emitProgress(options, mode === "recovery" ? "recovering-gap" : "loading-older", messageMap.size, iterations, topStability, mode);
       scrollElement.scrollTop = requestedTop;
