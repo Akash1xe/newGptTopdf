@@ -11,17 +11,21 @@ function formatExportDate(iso: string): string {
   }
 }
 
+function isAssistantOnlyExport(conversation: ConversationData, preferences: ExportPreferences): boolean {
+  if (preferences.excludeUserMessages || preferences.messageFilter === "assistant") return true;
+  return conversation.messages.length > 0 && conversation.messages.every((message) => message.role === "assistant");
+}
+
 export function renderConversation(document: Document, conversation: ConversationData, preferences: ExportPreferences): HTMLElement {
-  const article = el(document, "article", `export-document theme-${preferences.pdfTheme}`);
+  const assistantOnly = isAssistantOnlyExport(conversation, preferences);
+  const article = el(document, "article", `export-document theme-${preferences.pdfTheme}${assistantOnly ? " assistant-only-document" : ""}`);
+
   if (preferences.includeTitle || preferences.includeExportDate || preferences.includeSourceUrl) {
     const header = el(document, "header", "document-header");
     if (preferences.includeTitle) {
       const title = el(document, "h1", "document-title");
       title.textContent = conversation.title;
       header.appendChild(title);
-      const subtitle = el(document, "div", "document-subtitle");
-      subtitle.textContent = "ChatGPT conversation";
-      header.appendChild(subtitle);
     }
     const metadata = el(document, "div", "document-meta");
     if (preferences.includeExportDate) {
@@ -42,9 +46,11 @@ export function renderConversation(document: Document, conversation: Conversatio
 
   conversation.messages.forEach((message) => {
     const section = el(document, "section", `message message-${message.role}`);
-    const role = el(document, "div", "message-role");
-    role.textContent = message.role === "user" ? "User" : "Assistant";
-    section.appendChild(role);
+    if (!assistantOnly) {
+      const role = el(document, "div", "message-role");
+      role.textContent = message.role === "user" ? "User" : "Assistant";
+      section.appendChild(role);
+    }
     const body = el(document, "div", "message-body");
     body.appendChild(renderBlocks(document, message.blocks, preferences));
     section.appendChild(body);
