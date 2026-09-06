@@ -60,7 +60,8 @@ export function normalizeExportPreferences(input?: Partial<ExportPreferences> | 
     lineSpacing: enumValue(value.lineSpacing, ["compact", "normal", "relaxed"] as const, DEFAULT_EXPORT_PREFERENCES.lineSpacing),
     bodyFontFamily: enumValue(value.bodyFontFamily, ["system", "arial", "georgia", "times", "verdana", "tahoma", "trebuchet"] as const, DEFAULT_EXPORT_PREFERENCES.bodyFontFamily),
     bodyFontSize: boundedNumber(value.bodyFontSize, 9, 18, DEFAULT_EXPORT_PREFERENCES.bodyFontSize),
-    textWeight: enumValue(value.textWeight, ["light", "regular", "medium", "semibold"] as const, DEFAULT_EXPORT_PREFERENCES.textWeight),
+    textWeight: enumValue(value.textWeight, ["light", "regular", "medium", "semibold", "bold", "extrabold", "custom"] as const, DEFAULT_EXPORT_PREFERENCES.textWeight),
+    customTextWeight: boundedNumber(value.customTextWeight, 100, 800, DEFAULT_EXPORT_PREFERENCES.customTextWeight),
     codeFontSize: boundedNumber(value.codeFontSize, 8, 16, DEFAULT_EXPORT_PREFERENCES.codeFontSize)
   };
 }
