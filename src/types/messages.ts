@@ -15,14 +15,15 @@ export type ExtensionErrorCode =
   | "PRINT_WINDOW_BLOCKED";
 
 export type ExtractionMode = "mounted" | "full";
-
-export type ExtractionProgressPhase = "capturing" | "loading-older" | "verifying-start" | "restoring";
+export type ExtractionCollectorMode = "turbo" | "recovery" | "verify";
+export type ExtractionProgressPhase = "capturing" | "loading-older" | "recovering-gap" | "verifying-start" | "restoring";
 
 export interface ExtractionProgressData {
   phase: ExtractionProgressPhase;
   messageCount: number;
   iteration: number;
   topStabilityPasses: number;
+  mode?: ExtractionCollectorMode;
 }
 
 export type ExtensionRequest =
