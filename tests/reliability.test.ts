@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isVerifiedBeginning, mergeCollectedOrder, nextTopStabilityPasses } from "../src/providers/chatgpt/chatgptCollector";
+import {
+  checkBatchContinuity,
+  collectFullChatGPTConversation,
+  detectOrdinalGaps,
+  isVerifiedBeginning,
+  mergeCollectedOrder,
+  nextTopStabilityPasses,
+  type BatchSnapshot
+} from "../src/providers/chatgpt/chatgptCollector";
 import { parseChatGPTMessage } from "../src/providers/chatgpt/chatgptParser";
 
 function simulateVirtualizedCollection(total: number, windowSize = 80, overlap = 20): string[] {
@@ -14,6 +22,15 @@ function simulateVirtualizedCollection(total: number, windowSize = 80, overlap =
     end = start + overlap;
   }
   return collected;
+}
+
+function batch(from: number, to: number): BatchSnapshot {
+  const ordinals = Array.from({ length: to - from + 1 }, (_, index) => from + index);
+  return {
+    ids: ordinals.map((ordinal) => `turn-${ordinal}`),
+    ordinals,
+    allOrdinalsReliable: true
+  };
 }
 
 describe("reliability helpers", () => {
@@ -33,6 +50,54 @@ describe("reliability helpers", () => {
     });
   }
 
+  it("detects ordinal gaps exactly", () => {
+    expect(detectOrdinalGaps([0, 1, 2, 5, 6, 10])).toEqual([
+      { from: 3, to: 4 },
+      { from: 7, to: 9 }
+    ]);
+  });
+
+  it("accepts turbo batches that overlap", () => {
+    const previous = batch(700, 760);
+    const current = batch(620, 710);
+    const continuity = checkBatchContinuity(previous, current);
+    expect(continuity.status).toBe("continuous");
+    expect(continuity.overlapCount).toBeGreaterThan(0);
+  });
+
+  it("accepts reliable ordinal-adjacent batches even without ID overlap", () => {
+    const previous = batch(700, 760);
+    const current = batch(620, 699);
+    const continuity = checkBatchContinuity(previous, current);
+    expect(continuity.status).toBe("continuous");
+  });
+
+  it("detects a turbo jump that skipped a range", () => {
+    const previous = batch(700, 760);
+    const current = batch(500, 560);
+    expect(checkBatchContinuity(previous, current)).toEqual({
+      status: "gap-suspected",
+      overlapCount: 0,
+      missingOrdinalRanges: [{ from: 561, to: 699 }]
+    });
+  });
+
+  it("proves that a careful recovery batch bridges a suspected turbo gap", () => {
+    const lowerSafeBatch = batch(801, 1000);
+    const unsafeOlderBatch = batch(501, 700);
+    const recoveryBridge = batch(651, 850);
+
+    expect(checkBatchContinuity(lowerSafeBatch, unsafeOlderBatch).status).toBe("gap-suspected");
+    expect(checkBatchContinuity(lowerSafeBatch, recoveryBridge).status).toBe("continuous");
+    expect(checkBatchContinuity(recoveryBridge, unsafeOlderBatch).status).toBe("continuous");
+  });
+
+  it("does not trust no-overlap batches when ordinals are unavailable", () => {
+    const previous: BatchSnapshot = { ids: ["a", "b"], ordinals: [], allOrdinalsReliable: false };
+    const current: BatchSnapshot = { ids: ["x", "y"], ordinals: [], allOrdinalsReliable: false };
+    expect(checkBatchContinuity(previous, current).status).toBe("gap-suspected");
+  });
+
   it("requires three stable passes at the top before beginning is verified", () => {
     let passes = 0;
     passes = nextTopStabilityPasses(passes, { atTop: true, added: 0, oldestBefore: "turn-0", oldestAfter: "turn-0" });
@@ -48,8 +113,49 @@ describe("reliability helpers", () => {
     expect(passes).toBe(0);
   });
 
+  it("resets top stability when scroll height changes at the top", () => {
+    const passes = nextTopStabilityPasses(2, {
+      atTop: true,
+      added: 0,
+      oldestBefore: "turn-0",
+      oldestAfter: "turn-0",
+      heightBefore: 1000,
+      heightAfter: 1400
+    });
+    expect(passes).toBe(0);
+  });
+
   it("resets top stability when the viewport is no longer at the top", () => {
     expect(nextTopStabilityPasses(2, { atTop: false, added: 0, oldestBefore: "turn-0", oldestAfter: "turn-0" })).toBe(0);
+  });
+
+  it("deep-parses each stable mounted message once while repeated captures skip known IDs", async () => {
+    document.title = "Collector fixture - ChatGPT";
+    document.body.innerHTML = `
+      <main>
+        <article data-message-author-role="user" data-testid="conversation-turn-0">
+          <div class="whitespace-pre-wrap">next</div>
+        </article>
+        <article data-message-author-role="assistant" data-testid="conversation-turn-1">
+          <div class="markdown"><p>continue</p><div data-math-source="\\sqrt{x}"></div></div>
+        </article>
+        <article data-message-author-role="user" data-testid="conversation-turn-2">
+          <div class="whitespace-pre-wrap">next</div>
+        </article>
+      </main>`;
+
+    const result = await collectFullChatGPTConversation(document, window.location, {
+      mutationWaitMs: 1,
+      settleMs: 0,
+      topStabilityPasses: 1,
+      maxDurationMs: 1_000
+    });
+
+    expect(result.completeness.state).toBe("complete");
+    expect(result.completeness.uniqueParsedMessages).toBe(3);
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages.map((message) => message.plainText)).toEqual(["next", "continue", "next"]);
+    expect(result.completeness.duplicateCandidatesSkipped).toBeGreaterThanOrEqual(3);
   });
 
   it("parses conversation images but not button icons", () => {
