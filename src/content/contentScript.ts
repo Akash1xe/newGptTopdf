@@ -1,4 +1,4 @@
-import type { ExtensionRequest, ExtensionResponse, ExtractionDiagnostics } from "../types/messages";
+import type { ExtensionEvent, ExtensionRequest, ExtensionResponse, ExtractionDiagnostics } from "../types/messages";
 import { chatGPTProvider } from "../providers/chatgpt/chatgptProvider";
 import { ConversationCollectionError } from "../providers/chatgpt/chatgptCollector";
 import { CHATGPT_SELECTORS } from "../providers/chatgpt/chatgptSelectors";
@@ -7,6 +7,8 @@ import { isConversationStreaming } from "../providers/chatgpt/chatgptDomUtils";
 import { logger } from "../utils/logger";
 
 logger.info("Content script loaded");
+
+let activeCollectionController: AbortController | null = null;
 
 function diagnostics(): ExtractionDiagnostics {
   return {
@@ -20,6 +22,14 @@ function diagnostics(): ExtractionDiagnostics {
     streaming: isConversationStreaming(document),
     url: location.href
   };
+}
+
+function publishProgress(event: ExtensionEvent): void {
+  try {
+    chrome.runtime.sendMessage(event);
+  } catch {
+    // Popup may have closed. Full extraction still remains local and can finish safely.
+  }
 }
 
 chrome.runtime.onMessage.addListener((request: ExtensionRequest, _sender, sendResponse: (response: ExtensionResponse) => void) => {
@@ -37,6 +47,11 @@ chrome.runtime.onMessage.addListener((request: ExtensionRequest, _sender, sendRe
         sendResponse({ success: true, type: "DIAGNOSTICS", data: diagnostics() });
         return;
       }
+      if (request.type === "CANCEL_EXTRACTION") {
+        activeCollectionController?.abort();
+        sendResponse({ success: true, type: "EXTRACTION_CANCELLED" });
+        return;
+      }
       if (request.type === "EXTRACT_CONVERSATION") {
         if (!chatGPTProvider.isSupportedLocation(location)) {
           sendResponse({ success: false, error: "UNSUPPORTED_PAGE", message: "Open a ChatGPT conversation to use this extension." });
@@ -46,9 +61,29 @@ chrome.runtime.onMessage.addListener((request: ExtensionRequest, _sender, sendRe
           sendResponse({ success: false, error: "CONVERSATION_STILL_GENERATING", message: "Wait for ChatGPT to finish generating before exporting." });
           return;
         }
-        const data = request.mode === "full" && chatGPTProvider.extractFull
-          ? await chatGPTProvider.extractFull(document, location)
-          : chatGPTProvider.extract(document, location);
+
+        if (request.mode === "full" && chatGPTProvider.extractFull) {
+          activeCollectionController?.abort();
+          const controller = new AbortController();
+          activeCollectionController = controller;
+          try {
+            const data = await chatGPTProvider.extractFull(document, location, {
+              signal: controller.signal,
+              onProgress: (progress) => publishProgress({ type: "EXTRACTION_PROGRESS", data: progress })
+            });
+            if (data.messageCount === 0) {
+              sendResponse({ success: false, error: "NO_CONVERSATION_FOUND", message: "No conversation messages were found on this page." });
+              return;
+            }
+            logger.debug("Full conversation collected", { messages: data.messageCount, completeness: data.completeness.state });
+            sendResponse({ success: true, type: "CONVERSATION", data });
+          } finally {
+            if (activeCollectionController === controller) activeCollectionController = null;
+          }
+          return;
+        }
+
+        const data = chatGPTProvider.extract(document, location);
         if (data.messageCount === 0) {
           sendResponse({ success: false, error: "NO_CONVERSATION_FOUND", message: "No conversation messages were found on this page." });
           return;

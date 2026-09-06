@@ -39,6 +39,27 @@ describe("ChatGPT conversation extraction", () => {
     expect(data.possiblyPartial).toBe(true);
   });
 
+
+  it("keeps repeated identical messages distinct using stable conversation-turn identities", () => {
+    document.body.innerHTML = `
+      <section data-testid="conversation-turn-0"><div data-message-author-role="user"><p>next</p></div></section>
+      <section data-testid="conversation-turn-1"><div data-message-author-role="assistant"><div class="markdown"><p>continue</p></div></div></section>
+      <section data-testid="conversation-turn-2"><div data-message-author-role="user"><p>next</p></div></section>
+      <section data-testid="conversation-turn-3"><div data-message-author-role="assistant"><div class="markdown"><p>continue</p></div></div></section>
+      <section data-testid="conversation-turn-4"><div data-message-author-role="user"><p>next</p></div></section>
+    `;
+    const data = extractChatGPTConversation(document, window.location);
+    expect(data.messageCount).toBe(5);
+    expect(data.messages.map((message) => message.id)).toEqual([
+      "conversation-turn-0",
+      "conversation-turn-1",
+      "conversation-turn-2",
+      "conversation-turn-3",
+      "conversation-turn-4"
+    ]);
+    expect(data.messages.map((message) => message.sourceOrder)).toEqual([0, 1, 2, 3, 4]);
+  });
+
   it("counts code and math nodes", () => {
     document.body.innerHTML = `
       <section data-testid="conversation-turn-0" data-turn-id="a1"><div data-message-author-role="assistant"><div class="markdown">

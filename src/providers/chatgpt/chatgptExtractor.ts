@@ -1,7 +1,7 @@
 import type { ConversationData, ConversationMessage, ConversationStats, ExtractionCompleteness } from "../../types/conversation";
 import type { ContentBlock, InlineNode } from "../../types/content";
 import { CHATGPT_SELECTORS } from "./chatgptSelectors";
-import { conversationIdFromLocation, findMessageContent, getStableMessageId, isElementMeaningfullyVisible, normalizeRole } from "./chatgptDomUtils";
+import { conversationIdFromLocation, findConversationScrollElement, findMessageContent, getMessageIdentity, isElementMeaningfullyVisible, normalizeRole } from "./chatgptDomUtils";
 import { parseChatGPTMessage } from "./chatgptParser";
 
 function countInline(nodes: InlineNode[]): { mathNodes: number } {
@@ -73,24 +73,26 @@ export function extractChatGPTConversation(document: Document, location: Locatio
   for (const node of nodes) {
     const role = normalizeRole(node.getAttribute("data-message-author-role") ?? node.getAttribute("data-turn"));
     if (!role) continue;
-    const id = getStableMessageId(node, role, messages.length);
+    const identity = getMessageIdentity(node, role, messages.length);
+    const id = identity.id;
     if (seen.has(id)) continue;
     const content = findMessageContent(node, role);
     try {
       const parsed = parseChatGPTMessage(content);
       if (!parsed.plainText && parsed.blocks.length === 0) continue;
       seen.add(id);
-      messages.push({ id, role, order: messages.length, plainText: parsed.plainText, blocks: parsed.blocks });
+      messages.push({ id, role, order: messages.length, sourceOrder: identity.ordinal, identityQuality: identity.quality, plainText: parsed.plainText, blocks: parsed.blocks });
     } catch {
       const fallback = content.textContent?.trim() ?? "";
       if (!fallback) continue;
       seen.add(id);
-      messages.push({ id, role, order: messages.length, plainText: fallback, blocks: [{ type: "paragraph", children: [{ type: "text", text: fallback }] }] });
+      messages.push({ id, role, order: messages.length, sourceOrder: identity.ordinal, identityQuality: identity.quality, plainText: fallback, blocks: [{ type: "paragraph", children: [{ type: "text", text: fallback }] }] });
     }
   }
 
   const shellCount = document.querySelectorAll(CHATGPT_SELECTORS.turnShells).length;
-  const possiblyPartial = shellCount > messages.length && shellCount > 0;
+  const scrollElement = findConversationScrollElement(document);
+  const possiblyPartial = (shellCount > messages.length && shellCount > 0) || scrollElement.scrollTop > 2;
   const completeness: ExtractionCompleteness = possiblyPartial
     ? { state: "possibly-partial", reason: "virtualized-history", collectedMessages: messages.length }
     : { state: "complete", collectedMessages: messages.length };

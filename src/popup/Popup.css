@@ -49,3 +49,10 @@ footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 1
   .primary-button { background: #f4f4f5; color: #18181b; }
   .primary-button:not(:disabled):hover { background: #e4e4e7; }
 }
+.export-actions { display: grid; gap: 8px; }
+.secondary-button { width: 100%; min-height: 36px; border-radius: 9px; border: 1px solid #d4d4d8; background: #fff; color: #3f3f46; cursor: pointer; font-weight: 600; font-size: 11px; }
+.secondary-button:hover { background: #f4f4f5; }
+@media (prefers-color-scheme: dark) {
+  .secondary-button { background: #202023; border-color: #52525b; color: #e4e4e7; }
+  .secondary-button:hover { background: #27272a; }
+}

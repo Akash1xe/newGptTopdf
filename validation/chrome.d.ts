@@ -18,7 +18,8 @@ declare const chrome: {
   runtime: {
     getURL(path: string): string;
     lastError?: { message?: string };
-    onMessage: { addListener(listener: (...args: any[]) => any): void };
+    sendMessage(message: unknown): void;
+    onMessage: { addListener(listener: (...args: any[]) => any): void; removeListener(listener: (...args: any[]) => any): void };
     onInstalled: { addListener(listener: () => void): void };
   };
 };

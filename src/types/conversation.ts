@@ -1,11 +1,17 @@
 import type { ContentBlock, MessageRole } from "./content";
 
+export type MessageIdentityQuality = "strong" | "contextual";
+
 export interface ConversationMessage {
   id: string;
   role: MessageRole;
   order: number;
   plainText: string;
   blocks: ContentBlock[];
+  /** Stable ChatGPT turn ordinal when the DOM exposes one, e.g. conversation-turn-42. */
+  sourceOrder?: number;
+  /** Used by the full collector to avoid claiming completeness when only unstable fallback IDs exist. */
+  identityQuality?: MessageIdentityQuality;
 }
 
 export interface ConversationStats {
@@ -18,13 +24,35 @@ export interface ConversationStats {
 }
 
 export type CompletenessState = "complete" | "possibly-partial" | "known-partial";
-export type CompletenessReason = "virtualized-history" | "load-limit" | "timeout" | "dom-change" | "page-changed" | "unknown";
+export type CompletenessReason =
+  | "virtualized-history"
+  | "load-limit"
+  | "timeout"
+  | "no-progress"
+  | "dom-change"
+  | "page-changed"
+  | "conversation-changed"
+  | "streaming-started"
+  | "scroll-container-lost"
+  | "identity-conflict"
+  | "user-cancelled"
+  | "unknown";
+
+export type BeginningEvidence = "turn-ordinal" | "stable-top";
 
 export interface ExtractionCompleteness {
   state: CompletenessState;
   reason?: CompletenessReason;
   iterations?: number;
   collectedMessages?: number;
+  elapsedMs?: number;
+  noProgressPasses?: number;
+  topStabilityPasses?: number;
+  reachedBeginning?: boolean;
+  verifiedBeginning?: boolean;
+  beginningEvidence?: BeginningEvidence;
+  oldestMessageId?: string;
+  newestMessageId?: string;
 }
 
 export interface ConversationData {

@@ -10,7 +10,7 @@ export const chatGPTProvider: ConversationProvider = {
   extract(document, location) {
     return extractChatGPTConversation(document, location);
   },
-  extractFull(document, location, onProgress) {
-    return collectFullChatGPTConversation(document, location, { onProgress });
+  extractFull(document, location, options) {
+    return collectFullChatGPTConversation(document, location, options);
   }
 };
