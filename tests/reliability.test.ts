@@ -137,7 +137,7 @@ describe("reliability helpers", () => {
           <div class="whitespace-pre-wrap">next</div>
         </article>
         <article data-message-author-role="assistant" data-testid="conversation-turn-1">
-          <div class="markdown"><p>continue</p><div data-math-source="\\sqrt{x}"></div></div>
+          <div class="markdown"><p>continue</p></div>
         </article>
         <article data-message-author-role="user" data-testid="conversation-turn-2">
           <div class="whitespace-pre-wrap">next</div>
