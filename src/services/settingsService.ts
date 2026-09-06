@@ -1,7 +1,7 @@
 import { DEFAULT_EXPORT_PREFERENCES, type CustomMargins, type ExportPreferences, type MarginPreset } from "../types/preferences";
 
 const STORAGE_KEY = "exportPreferencesV1";
-const STORAGE_VERSION = 1;
+const STORAGE_VERSION = 2;
 
 interface StoredPreferences {
   version: number;
@@ -32,9 +32,31 @@ function normalizeMargins(value: unknown): CustomMargins {
 }
 
 function normalizeMarginPreset(value: unknown): MarginPreset {
-  // "comfortable" was the previous widest preset; migrate it to the new "wide" option.
+  // "comfortable" was the previous widest preset; migrate it to the current "wide" option.
   if (value === "comfortable") return "wide";
   return enumValue(value, ["compact", "normal", "wide", "custom"] as const, DEFAULT_EXPORT_PREFERENCES.marginPreset);
+}
+
+function migrateV1Preferences(input: Partial<ExportPreferences>): Partial<ExportPreferences> {
+  const value: Partial<ExportPreferences> = { ...input };
+
+  // v1 shipped with roomy web-like defaults. Move only values equal to those
+  // old defaults to the new print-oriented defaults, while preserving explicit
+  // non-default choices such as custom fonts, margins, sizes and spacing.
+  if (value.bodyFontSize === 11) value.bodyFontSize = DEFAULT_EXPORT_PREFERENCES.bodyFontSize;
+  if (value.codeFontSize === 10) value.codeFontSize = DEFAULT_EXPORT_PREFERENCES.codeFontSize;
+  if (value.marginPreset === "normal") value.marginPreset = DEFAULT_EXPORT_PREFERENCES.marginPreset;
+  if (value.messagePadding === "normal") value.messagePadding = DEFAULT_EXPORT_PREFERENCES.messagePadding;
+  if (value.messageSpacing === "normal") value.messageSpacing = DEFAULT_EXPORT_PREFERENCES.messageSpacing;
+  if (value.paragraphSpacing === "normal") value.paragraphSpacing = DEFAULT_EXPORT_PREFERENCES.paragraphSpacing;
+  if (value.lineSpacing === "normal") value.lineSpacing = DEFAULT_EXPORT_PREFERENCES.lineSpacing;
+
+  const margins = value.customMargins;
+  if (margins && margins.top === 15 && margins.right === 15 && margins.bottom === 15 && margins.left === 15) {
+    value.customMargins = { ...DEFAULT_EXPORT_PREFERENCES.customMargins };
+  }
+
+  return value;
 }
 
 export function normalizeExportPreferences(input?: Partial<ExportPreferences> | null): ExportPreferences {
@@ -59,7 +81,7 @@ export function normalizeExportPreferences(input?: Partial<ExportPreferences> | 
     paragraphSpacing: enumValue(value.paragraphSpacing, ["compact", "normal", "spacious"] as const, DEFAULT_EXPORT_PREFERENCES.paragraphSpacing),
     lineSpacing: enumValue(value.lineSpacing, ["compact", "normal", "relaxed"] as const, DEFAULT_EXPORT_PREFERENCES.lineSpacing),
     bodyFontFamily: enumValue(value.bodyFontFamily, ["system", "arial", "georgia", "times", "verdana", "tahoma", "trebuchet"] as const, DEFAULT_EXPORT_PREFERENCES.bodyFontFamily),
-    bodyFontSize: boundedNumber(value.bodyFontSize, 9, 18, DEFAULT_EXPORT_PREFERENCES.bodyFontSize),
+    bodyFontSize: boundedNumber(value.bodyFontSize, 8, 18, DEFAULT_EXPORT_PREFERENCES.bodyFontSize),
     textWeight: enumValue(value.textWeight, ["light", "regular", "medium", "semibold", "bold", "extrabold", "custom"] as const, DEFAULT_EXPORT_PREFERENCES.textWeight),
     customTextWeight: boundedNumber(value.customTextWeight, 100, 800, DEFAULT_EXPORT_PREFERENCES.customTextWeight),
     codeFontSize: boundedNumber(value.codeFontSize, 8, 16, DEFAULT_EXPORT_PREFERENCES.codeFontSize)
@@ -69,7 +91,8 @@ export function normalizeExportPreferences(input?: Partial<ExportPreferences> | 
 export async function getExportPreferences(): Promise<ExportPreferences> {
   const result = await chrome.storage.local.get(STORAGE_KEY);
   const stored = result[STORAGE_KEY] as StoredPreferences | undefined;
-  if (!stored || stored.version !== STORAGE_VERSION) return normalizeExportPreferences(stored?.preferences);
+  if (!stored) return normalizeExportPreferences();
+  if (stored.version === 1) return normalizeExportPreferences(migrateV1Preferences(stored.preferences));
   return normalizeExportPreferences(stored.preferences);
 }
 
