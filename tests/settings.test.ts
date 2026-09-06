@@ -28,6 +28,7 @@ describe("export preference storage", () => {
     expect(value.customMargins).toEqual({ top: 15, right: 15, bottom: 15, left: 15 });
     expect(value.bodyFontFamily).toBe("system");
     expect(value.bodyFontSize).toBe(11);
+    expect(value.textWeight).toBe("regular");
     expect(value.codeFontSize).toBe(10);
     expect(value.lineSpacing).toBe("normal");
   });
@@ -37,20 +38,30 @@ describe("export preference storage", () => {
     expect(value.messageFilter).toBe("assistant");
     expect(value.excludeUserMessages).toBe(true);
     expect(value.marginPreset).toBe("wide");
+    expect(value.textWeight).toBe("regular");
   });
 
   it("clamps unsafe typography and custom margin values", () => {
     const value = normalizeExportPreferences({
       bodyFontFamily: "bad-font; color:red" as never,
       bodyFontSize: 1000,
+      textWeight: "900; color:red" as never,
       codeFontSize: -5,
       marginPreset: "custom",
       customMargins: { top: -10, right: 100, bottom: 12, left: 16 }
     });
     expect(value.bodyFontFamily).toBe("system");
     expect(value.bodyFontSize).toBe(18);
+    expect(value.textWeight).toBe("regular");
     expect(value.codeFontSize).toBe(8);
     expect(value.customMargins).toEqual({ top: 5, right: 40, bottom: 12, left: 16 });
+  });
+
+  it("accepts each supported text thickness", () => {
+    expect(normalizeExportPreferences({ textWeight: "light" }).textWeight).toBe("light");
+    expect(normalizeExportPreferences({ textWeight: "regular" }).textWeight).toBe("regular");
+    expect(normalizeExportPreferences({ textWeight: "medium" }).textWeight).toBe("medium");
+    expect(normalizeExportPreferences({ textWeight: "semibold" }).textWeight).toBe("semibold");
   });
 
   it("persists and reloads layout, typography and exclude-my-prompts settings", async () => {
@@ -67,6 +78,7 @@ describe("export preference storage", () => {
       lineSpacing: "relaxed" as const,
       bodyFontFamily: "georgia" as const,
       bodyFontSize: 14,
+      textWeight: "semibold" as const,
       codeFontSize: 12
     };
     await saveExportPreferences(changed);
@@ -82,6 +94,7 @@ describe("export preference storage", () => {
       marginPreset: "wide",
       bodyFontFamily: "times",
       bodyFontSize: 18,
+      textWeight: "semibold",
       codeFontSize: 16,
       lineSpacing: "relaxed"
     });
@@ -90,6 +103,7 @@ describe("export preference storage", () => {
     expect(restored.excludeUserMessages).toBe(false);
     expect(restored.bodyFontFamily).toBe("system");
     expect(restored.bodyFontSize).toBe(11);
+    expect(restored.textWeight).toBe("regular");
     expect(restored.marginPreset).toBe("normal");
   });
 });
