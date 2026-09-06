@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "strict": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true
+  },
+  "include": [
+    "validation/katex.d.ts",
+    "validation/chrome.d.ts",
+    "src/types/**/*.ts",
+    "src/parser/**/*.ts",
+    "src/providers/**/*.ts",
+    "src/renderer/**/*.ts",
+    "src/services/**/*.ts",
+    "src/print/**/*.ts",
+    "src/content/**/*.ts",
+    "src/background/**/*.ts",
+    "src/utils/**/*.ts"
+  ]
+}

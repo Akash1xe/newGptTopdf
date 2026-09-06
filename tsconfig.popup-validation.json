@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true
+  },
+  "include": [
+    "validation/chrome.d.ts",
+    "validation/react.d.ts",
+    "src/types/**/*.ts",
+    "src/services/**/*.ts",
+    "src/popup/**/*.ts",
+    "src/popup/**/*.tsx",
+    "src/constants/**/*.ts"
+  ]
+}

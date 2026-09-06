@@ -1,0 +1,66 @@
+import type { ExtensionRequest, ExtensionResponse, ExtractionDiagnostics } from "../types/messages";
+import { chatGPTProvider } from "../providers/chatgpt/chatgptProvider";
+import { ConversationCollectionError } from "../providers/chatgpt/chatgptCollector";
+import { CHATGPT_SELECTORS } from "../providers/chatgpt/chatgptSelectors";
+import { getRoleNodes } from "../providers/chatgpt/chatgptExtractor";
+import { isConversationStreaming } from "../providers/chatgpt/chatgptDomUtils";
+import { logger } from "../utils/logger";
+
+logger.info("Content script loaded");
+
+function diagnostics(): ExtractionDiagnostics {
+  return {
+    roleNodeCount: document.querySelectorAll(CHATGPT_SELECTORS.roleNodes).length,
+    turnShellCount: document.querySelectorAll(CHATGPT_SELECTORS.turnShells).length,
+    activeRoleCount: getRoleNodes(document).length,
+    streaming: isConversationStreaming(document),
+    url: location.href
+  };
+}
+
+chrome.runtime.onMessage.addListener((request: ExtensionRequest, _sender, sendResponse: (response: ExtensionResponse) => void) => {
+  const handle = async () => {
+    try {
+      if (request.type === "PING") {
+        sendResponse({ success: true, type: "PONG" });
+        return;
+      }
+      if (request.type === "CHECK_CHATGPT_PAGE") {
+        sendResponse({ success: true, type: "PAGE_STATUS", supported: chatGPTProvider.isSupportedLocation(location) });
+        return;
+      }
+      if (request.type === "GET_EXTRACTION_DIAGNOSTICS") {
+        sendResponse({ success: true, type: "DIAGNOSTICS", data: diagnostics() });
+        return;
+      }
+      if (request.type === "EXTRACT_CONVERSATION") {
+        if (!chatGPTProvider.isSupportedLocation(location)) {
+          sendResponse({ success: false, error: "UNSUPPORTED_PAGE", message: "Open a ChatGPT conversation to use this extension." });
+          return;
+        }
+        if (isConversationStreaming(document)) {
+          sendResponse({ success: false, error: "CONVERSATION_STILL_GENERATING", message: "Wait for ChatGPT to finish generating before exporting." });
+          return;
+        }
+        const data = request.mode === "full" && chatGPTProvider.extractFull
+          ? await chatGPTProvider.extractFull(document, location)
+          : chatGPTProvider.extract(document, location);
+        if (data.messageCount === 0) {
+          sendResponse({ success: false, error: "NO_CONVERSATION_FOUND", message: "No conversation messages were found on this page." });
+          return;
+        }
+        logger.debug("Conversation extracted", { messages: data.messageCount, completeness: data.completeness.state });
+        sendResponse({ success: true, type: "CONVERSATION", data });
+      }
+    } catch (error) {
+      if (error instanceof ConversationCollectionError) {
+        sendResponse({ success: false, error: error.code, message: error.message });
+        return;
+      }
+      logger.error("Extraction failed", error instanceof Error ? error.message : "Unknown extraction error");
+      sendResponse({ success: false, error: "EXTRACTION_FAILED", message: "The conversation could not be extracted." });
+    }
+  };
+  void handle();
+  return true;
+});
