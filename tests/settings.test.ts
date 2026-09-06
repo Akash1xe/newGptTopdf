@@ -17,21 +17,54 @@ beforeEach(() => {
 });
 
 describe("export preference storage", () => {
-  it("normalizes invalid and partial settings with appearance defaults", () => {
+  it("normalizes invalid and partial settings with compact document defaults", () => {
     const value = normalizeExportPreferences({ pageSize: "Letter", pdfTheme: "wrong" as never, includeSourceUrl: true });
     expect(value.pageSize).toBe("Letter");
     expect(value.pdfTheme).toBe("light");
     expect(value.includeSourceUrl).toBe(true);
     expect(value.wrapCode).toBe(true);
     expect(value.excludeUserMessages).toBe(false);
-    expect(value.marginPreset).toBe("normal");
-    expect(value.customMargins).toEqual({ top: 15, right: 15, bottom: 15, left: 15 });
+    expect(value.marginPreset).toBe("compact");
+    expect(value.customMargins).toEqual({ top: 11, right: 11, bottom: 11, left: 11 });
+    expect(value.messagePadding).toBe("compact");
+    expect(value.messageSpacing).toBe("compact");
+    expect(value.paragraphSpacing).toBe("compact");
+    expect(value.lineSpacing).toBe("compact");
     expect(value.bodyFontFamily).toBe("system");
-    expect(value.bodyFontSize).toBe(11);
+    expect(value.bodyFontSize).toBe(8);
     expect(value.textWeight).toBe("regular");
     expect(value.customTextWeight).toBe(400);
-    expect(value.codeFontSize).toBe(10);
-    expect(value.lineSpacing).toBe("normal");
+    expect(value.codeFontSize).toBe(8);
+  });
+
+  it("migrates v1 roomy defaults to the compact document profile", async () => {
+    memory.exportPreferencesV1 = {
+      version: 1,
+      preferences: {
+        marginPreset: "normal",
+        customMargins: { top: 15, right: 15, bottom: 15, left: 15 },
+        messagePadding: "normal",
+        messageSpacing: "normal",
+        paragraphSpacing: "normal",
+        lineSpacing: "normal",
+        bodyFontSize: 11,
+        codeFontSize: 10,
+        textWeight: "medium",
+        bodyFontFamily: "georgia"
+      }
+    };
+
+    const value = await getExportPreferences();
+    expect(value.marginPreset).toBe("compact");
+    expect(value.customMargins).toEqual({ top: 11, right: 11, bottom: 11, left: 11 });
+    expect(value.messagePadding).toBe("compact");
+    expect(value.messageSpacing).toBe("compact");
+    expect(value.paragraphSpacing).toBe("compact");
+    expect(value.lineSpacing).toBe("compact");
+    expect(value.bodyFontSize).toBe(8);
+    expect(value.codeFontSize).toBe(8);
+    expect(value.textWeight).toBe("medium");
+    expect(value.bodyFontFamily).toBe("georgia");
   });
 
   it("migrates older assistant-only, comfortable-margin and pre-custom thickness preferences", () => {
@@ -60,6 +93,7 @@ describe("export preference storage", () => {
     expect(value.codeFontSize).toBe(8);
     expect(value.customMargins).toEqual({ top: 5, right: 40, bottom: 12, left: 16 });
 
+    expect(normalizeExportPreferences({ bodyFontSize: -100 }).bodyFontSize).toBe(8);
     expect(normalizeExportPreferences({ customTextWeight: -100 }).customTextWeight).toBe(100);
     expect(normalizeExportPreferences({ customTextWeight: Number.NaN }).customTextWeight).toBe(400);
   });
@@ -85,7 +119,7 @@ describe("export preference storage", () => {
       marginPreset: "custom" as const,
       customMargins: { top: 10, right: 12, bottom: 14, left: 16 },
       messagePadding: "spacious" as const,
-      messageSpacing: "compact" as const,
+      messageSpacing: "normal" as const,
       paragraphSpacing: "spacious" as const,
       lineSpacing: "relaxed" as const,
       bodyFontFamily: "georgia" as const,
@@ -109,7 +143,7 @@ describe("export preference storage", () => {
     expect((await getExportPreferences()).customTextWeight).toBe(550);
   });
 
-  it("resets all appearance settings and exclude-my-prompts to defaults", async () => {
+  it("resets all appearance settings and exclude-my-prompts to compact defaults", async () => {
     await saveExportPreferences({
       ...DEFAULT_EXPORT_PREFERENCES,
       pdfTheme: "dark",
@@ -127,9 +161,11 @@ describe("export preference storage", () => {
     const restored = await getExportPreferences();
     expect(restored.excludeUserMessages).toBe(false);
     expect(restored.bodyFontFamily).toBe("system");
-    expect(restored.bodyFontSize).toBe(11);
+    expect(restored.bodyFontSize).toBe(8);
     expect(restored.textWeight).toBe("regular");
     expect(restored.customTextWeight).toBe(400);
-    expect(restored.marginPreset).toBe("normal");
+    expect(restored.marginPreset).toBe("compact");
+    expect(restored.codeFontSize).toBe(8);
+    expect(restored.lineSpacing).toBe("compact");
   });
 });
