@@ -1,7 +1,7 @@
 import type { ConversationData, ConversationMessage, ConversationStats, ExtractionCompleteness } from "../../types/conversation";
 import type { ContentBlock, InlineNode } from "../../types/content";
 import { CHATGPT_SELECTORS } from "./chatgptSelectors";
-import { conversationIdFromLocation, findConversationScrollElement, findMessageContent, getMessageIdentity, isElementMeaningfullyVisible, normalizeRole } from "./chatgptDomUtils";
+import { conversationIdFromLocation, findConversationScrollElement, findMessageContent, getMessageIdentity, getMessageRole, isElementMeaningfullyVisible } from "./chatgptDomUtils";
 import { parseChatGPTMessage } from "./chatgptParser";
 
 function countInline(nodes: InlineNode[]): { mathNodes: number } {
@@ -58,11 +58,32 @@ export function getConversationTitle(document: Document): string {
 }
 
 export function getRoleNodes(document: Document): Element[] {
-  const primary = Array.from(document.querySelectorAll(CHATGPT_SELECTORS.roleNodes));
-  const nodes = primary.length ? primary : Array.from(document.querySelectorAll(CHATGPT_SELECTORS.fallbackRoleNodes));
-  return nodes.filter((node) => {
-    try { return isElementMeaningfullyVisible(node); } catch { return node.getAttribute("hidden") === null && node.getAttribute("aria-hidden") !== "true"; }
-  });
+  // Do not use "primary OR fallback". ChatGPT can ship mixed renderer states
+  // where the assistant still has data-message-author-role while the user is
+  // represented only by data-user-message-bubble. Merge all semantic signals.
+  const candidates = [
+    ...Array.from(document.querySelectorAll(CHATGPT_SELECTORS.roleNodes)),
+    ...Array.from(document.querySelectorAll(CHATGPT_SELECTORS.fallbackRoleNodes))
+  ];
+  const nodes: Element[] = [];
+  const seen = new Set<string>();
+
+  for (const [index, node] of candidates.entries()) {
+    const role = getMessageRole(node);
+    if (!role) continue;
+    try {
+      if (!isElementMeaningfullyVisible(node)) continue;
+    } catch {
+      if (node.getAttribute("hidden") !== null || node.getAttribute("aria-hidden") === "true") continue;
+    }
+
+    const identity = getMessageIdentity(node, role, index);
+    const key = `${role}:${identity.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    nodes.push(node);
+  }
+  return nodes;
 }
 
 export function extractChatGPTConversation(document: Document, location: Location): ConversationData {
@@ -71,7 +92,7 @@ export function extractChatGPTConversation(document: Document, location: Locatio
   const messages: ConversationMessage[] = [];
 
   for (const node of nodes) {
-    const role = normalizeRole(node.getAttribute("data-message-author-role") ?? node.getAttribute("data-turn"));
+    const role = getMessageRole(node);
     if (!role) continue;
     const identity = getMessageIdentity(node, role, messages.length);
     const id = identity.id;
