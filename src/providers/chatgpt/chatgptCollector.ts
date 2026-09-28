@@ -9,8 +9,8 @@ import {
   findConversationScrollElement,
   findMessageContent,
   getMessageIdentity,
-  isConversationStreaming,
-  normalizeRole
+  getMessageRole,
+  isConversationStreaming
 } from "./chatgptDomUtils";
 
 export type CollectionFailureCode =
@@ -177,7 +177,7 @@ function waitForConversationMutation(root: Node, timeoutMs: number, signal?: Abo
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["data-message-author-role", "data-turn-id", "data-message-id", "data-testid", "hidden", "aria-hidden"]
+      attributeFilter: ["data-message-author-role", "data-conversation-role", "data-role", "data-message-author", "data-turn", "data-turn-key", "data-user-message-bubble", "data-turn-id", "data-message-id", "data-message-uuid", "data-testid", "hidden", "aria-hidden"]
     });
     const timer = setTimeout(() => finish("timeout"), timeoutMs);
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -217,7 +217,7 @@ function captureScrollRestorePoint(document: Document, scrollElement: HTMLElemen
   let bestDistance = Number.POSITIVE_INFINITY;
 
   for (const [index, node] of getRoleNodes(document).entries()) {
-    const role = normalizeRole(node.getAttribute("data-message-author-role") ?? node.getAttribute("data-turn"));
+    const role = getMessageRole(node);
     if (!role) continue;
     const rect = node.getBoundingClientRect();
     if (rect.bottom <= top || rect.top >= bottom) continue;
@@ -256,7 +256,7 @@ async function restoreScrollPosition(document: Document, scrollElement: HTMLElem
   if (!point.anchorId || point.anchorOffset == null) return;
   const top = viewportTop(document, scrollElement);
   for (const [index, node] of getRoleNodes(document).entries()) {
-    const role = normalizeRole(node.getAttribute("data-message-author-role") ?? node.getAttribute("data-turn"));
+    const role = getMessageRole(node);
     if (!role) continue;
     const identity = getMessageIdentity(node, role, index);
     if (identity.id !== point.anchorId) continue;
@@ -321,7 +321,7 @@ export function isVerifiedBeginning(topStabilityPasses: number, requiredPasses =
 function discoverMountedMessageCandidates(document: Document): MountedMessageCandidate[] {
   const candidates: MountedMessageCandidate[] = [];
   for (const [index, node] of getRoleNodes(document).entries()) {
-    const role = normalizeRole(node.getAttribute("data-message-author-role") ?? node.getAttribute("data-turn"));
+    const role = getMessageRole(node);
     if (!role) continue;
     const identity = getMessageIdentity(node, role, index);
     candidates.push({
