@@ -60,6 +60,74 @@ describe("ChatGPT conversation extraction", () => {
     expect(data.messages.map((message) => message.sourceOrder)).toEqual([0, 1, 2, 3, 4]);
   });
 
+  it("extracts the current grouped data-turn-key renderer", () => {
+    document.body.innerHTML = `
+      <main>
+        <div data-turn-key="turn-alpha">
+          <div data-user-message-bubble>
+            <div class="whitespace-pre-wrap">Explain the new renderer</div>
+          </div>
+          <div data-conversation-role="assistant">
+            <div class="markdown"><h2>Answer</h2><p>The grouped renderer works.</p></div>
+            <div class="turn-action-controls"><button data-testid="copy-turn-action-button">Copy</button></div>
+          </div>
+        </div>
+      </main>
+    `;
+
+    const data = extractChatGPTConversation(document, window.location);
+    expect(data.messageCount).toBe(2);
+    expect(data.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(data.messages.map((message) => message.id)).toEqual([
+      "group:user:turn-alpha",
+      "group:assistant:turn-alpha"
+    ]);
+    expect(data.messages[0].plainText).toBe("Explain the new renderer");
+    expect(data.messages[1].plainText).toContain("The grouped renderer works.");
+    expect(data.messages[1].plainText).not.toContain("Copy");
+    expect(data.messages.every((message) => message.identityQuality === "strong")).toBe(true);
+  });
+
+  it("merges mixed legacy and grouped role signals without dropping the user or duplicating the assistant", () => {
+    document.body.innerHTML = `
+      <main>
+        <div data-turn-key="turn-beta">
+          <div data-user-message-bubble>Question from the new user bubble</div>
+          <div data-conversation-role="assistant">
+            <div data-message-author-role="assistant">
+              <div class="markdown"><p>Answer exposed through both role contracts.</p></div>
+            </div>
+          </div>
+        </div>
+      </main>
+    `;
+
+    const data = extractChatGPTConversation(document, window.location);
+    expect(data.messageCount).toBe(2);
+    expect(data.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(data.messages.map((message) => message.id)).toEqual([
+      "group:user:turn-beta",
+      "group:assistant:turn-beta"
+    ]);
+    expect(data.messages[1].plainText).toBe("Answer exposed through both role contracts.");
+  });
+
+  it("accepts alternate semantic role attributes used by ChatGPT UI variants", () => {
+    document.body.innerHTML = `
+      <section data-testid="conversation-turn-0">
+        <div data-role="user"><div class="whitespace-pre-wrap">Variant user</div></div>
+      </section>
+      <section data-testid="conversation-turn-1">
+        <div data-message-author="assistant"><div class="prose"><p>Variant assistant</p></div></div>
+      </section>
+    `;
+
+    const data = extractChatGPTConversation(document, window.location);
+    expect(data.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(data.messages.map((message) => message.sourceOrder)).toEqual([0, 1]);
+    expect(data.messages.map((message) => message.plainText)).toEqual(["Variant user", "Variant assistant"]);
+  });
+
   it("counts code and math nodes", () => {
     document.body.innerHTML = `
       <section data-testid="conversation-turn-0" data-turn-id="a1"><div data-message-author-role="assistant"><div class="markdown">
