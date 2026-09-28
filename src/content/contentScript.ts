@@ -12,7 +12,7 @@ let activeCollectionController: AbortController | null = null;
 
 function diagnostics(): ExtractionDiagnostics {
   return {
-    roleNodeCount: document.querySelectorAll(CHATGPT_SELECTORS.roleNodes).length,
+    roleNodeCount: document.querySelectorAll(`${CHATGPT_SELECTORS.roleNodes}, ${CHATGPT_SELECTORS.fallbackRoleNodes}`).length,
     turnShellCount: document.querySelectorAll(CHATGPT_SELECTORS.turnShells).length,
     activeRoleCount: getRoleNodes(document).length,
     mathSourceCount: document.querySelectorAll("[data-math-source], [data-latex], [data-tex], [data-math]").length,
