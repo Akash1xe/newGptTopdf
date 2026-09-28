@@ -23,6 +23,19 @@ export function normalizeRole(value: string | null): "user" | "assistant" | null
   return value === "user" || value === "assistant" ? value : null;
 }
 
+/**
+ * Resolve a role from every semantic contract ChatGPT currently uses.
+ * Do not infer roles from text/classes: those are localization/A-B-test fragile.
+ */
+export function getMessageRole(element: Element): "user" | "assistant" | null {
+  for (const attribute of ["data-message-author-role", "data-conversation-role", "data-role", "data-message-author", "data-turn"]) {
+    const role = normalizeRole(element.getAttribute(attribute));
+    if (role) return role;
+  }
+  if (element.hasAttribute("data-user-message-bubble")) return "user";
+  return null;
+}
+
 export interface MessageIdentity {
   id: string;
   quality: MessageIdentityQuality;
@@ -38,13 +51,26 @@ function parseTurnOrdinal(value: string | null | undefined): number | undefined 
 }
 
 export function getMessageIdentity(node: Element, role: "user" | "assistant", fallbackOrder: number): MessageIdentity {
-  const shell = node.closest('[data-turn-id], [data-message-id], [data-testid^="conversation-turn"], article[id], section[id]');
+  const shell = node.closest('[data-turn-key], [data-turn-id], [data-message-id], [data-message-uuid], [data-testid^="conversation-turn"], article[id], section[id]');
   const testId = node.getAttribute("data-testid") ?? shell?.getAttribute("data-testid");
   const ordinal = parseTurnOrdinal(testId);
-  const direct =
+
+  // Prefer a true per-message identifier when available.
+  const messageId =
     node.getAttribute("data-message-id")
-    ?? shell?.getAttribute("data-turn-id")
+    ?? node.getAttribute("data-message-uuid")
     ?? shell?.getAttribute("data-message-id")
+    ?? shell?.getAttribute("data-message-uuid");
+  if (messageId?.trim()) return { id: messageId.trim(), quality: "strong", ordinal };
+
+  // The current grouped renderer places the user prompt and assistant answer
+  // under one data-turn-key. Scope that shared key by role so the two messages
+  // never collapse into one deduplicated entry.
+  const turnKey = node.getAttribute("data-turn-key") ?? shell?.getAttribute("data-turn-key");
+  if (turnKey?.trim()) return { id: `group:${role}:${turnKey.trim()}`, quality: "strong", ordinal };
+
+  const direct =
+    shell?.getAttribute("data-turn-id")
     ?? testId
     ?? shell?.id;
 
@@ -66,7 +92,10 @@ export function getStableMessageId(node: Element, role: "user" | "assistant", fa
 }
 
 export function findMessageContent(roleNode: Element, role: "user" | "assistant"): Element {
-  if (role === "user") return roleNode.querySelector(CHATGPT_SELECTORS.userContent) ?? roleNode;
+  if (role === "user") {
+    if (roleNode.hasAttribute("data-user-message-bubble")) return roleNode.querySelector('.whitespace-pre-wrap, [data-message-content]') ?? roleNode;
+    return roleNode.querySelector(CHATGPT_SELECTORS.userContent) ?? roleNode;
+  }
   return roleNode.querySelector(CHATGPT_SELECTORS.assistantContent) ?? roleNode;
 }
 
