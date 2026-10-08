@@ -141,7 +141,10 @@ export function Popup() {
       if (!complete) {
         setExportStage("failed");
         const reason = data.completeness.reason ? ` Reason: ${data.completeness.reason.replaceAll("-", " ")}.` : "";
-        setStatusMessage(`Could not verify the full conversation. ${data.messageCount} messages were collected, but a complete continuous history could not be confirmed.${reason}`);
+        const viewport = data.completeness.reason === "no-progress" && data.completeness.scrollContainer
+          ? ` Viewport: ${data.completeness.scrollContainer}, ${data.completeness.scrollCoordinateMode ?? "unknown"} coordinates, position ${data.completeness.scrollPositionPx ?? "?"}/${data.completeness.scrollRangePx ?? "?"}.`
+          : "";
+        setStatusMessage(`Could not verify the full conversation. ${data.messageCount} messages were collected, but a complete continuous history could not be confirmed.${reason}${viewport}`);
         return;
       }
 

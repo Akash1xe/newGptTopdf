@@ -202,13 +202,52 @@ function viewportTop(document: Document, scrollElement: HTMLElement): number {
   return scrollElement.getBoundingClientRect().top;
 }
 
+const negativeScrollElements = new WeakMap<HTMLElement, boolean>();
+
+function scrollRange(scrollElement: HTMLElement): number {
+  return Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+}
+
+function usesNegativeScrollCoordinates(scrollElement: HTMLElement): boolean {
+  const cached = negativeScrollElements.get(scrollElement);
+  if (cached != null) return cached;
+  const original = scrollElement.scrollTop;
+  scrollElement.scrollTop = -1;
+  const negative = scrollElement.scrollTop < 0;
+  scrollElement.scrollTop = original;
+  negativeScrollElements.set(scrollElement, negative);
+  return negative;
+}
+
+/** A stable 0-at-beginning coordinate for normal and column-reverse scrollers. */
+function scrollPosition(scrollElement: HTMLElement): number {
+  const range = scrollRange(scrollElement);
+  return usesNegativeScrollCoordinates(scrollElement)
+    ? Math.max(0, Math.min(range, range + scrollElement.scrollTop))
+    : Math.max(0, Math.min(range, scrollElement.scrollTop));
+}
+
+function setScrollPosition(scrollElement: HTMLElement, position: number): void {
+  const range = scrollRange(scrollElement);
+  const next = Math.max(0, Math.min(range, position));
+  scrollElement.scrollTop = usesNegativeScrollCoordinates(scrollElement) ? next - range : next;
+}
+
+function describeScrollElement(scrollElement: HTMLElement): string {
+  const id = scrollElement.id ? `#${scrollElement.id}` : "";
+  const classes = typeof scrollElement.className === "string"
+    ? scrollElement.className.trim().split(/\s+/).filter(Boolean).slice(0, 4).map((name) => `.${name}`).join("")
+    : "";
+  return `${scrollElement.tagName.toLowerCase()}${id}${classes}`;
+}
+
 function distanceFromBottom(scrollElement: HTMLElement): number {
-  return Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight - scrollElement.scrollTop);
+  return Math.max(0, scrollRange(scrollElement) - scrollPosition(scrollElement));
 }
 
 function captureScrollRestorePoint(document: Document, scrollElement: HTMLElement): ScrollRestorePoint {
-  const originalTop = scrollElement.scrollTop;
-  const originalScrollableRange = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+  const originalTop = scrollPosition(scrollElement);
+  const originalScrollableRange = scrollRange(scrollElement);
   const originalBottomOffset = Math.max(0, originalScrollableRange - originalTop);
   const top = viewportTop(document, scrollElement);
   const bottom = top + Math.max(scrollElement.clientHeight, document.defaultView?.innerHeight ?? 0);
@@ -235,7 +274,7 @@ function captureScrollRestorePoint(document: Document, scrollElement: HTMLElemen
 
 async function restoreScrollPosition(document: Document, scrollElement: HTMLElement, point: ScrollRestorePoint): Promise<void> {
   if (!scrollElement.isConnected) return;
-  const range = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+  const range = scrollRange(scrollElement);
   let target = Math.min(point.originalTop, range);
 
   if (point.originalBottomOffset <= Math.max(scrollElement.clientHeight * 1.5, 800)) {
@@ -244,7 +283,7 @@ async function restoreScrollPosition(document: Document, scrollElement: HTMLElem
     target = Math.min(range, (point.originalTop / point.originalScrollableRange) * range);
   }
 
-  scrollElement.scrollTop = target;
+  setScrollPosition(scrollElement, target);
   dispatchSyntheticScroll(document, scrollElement);
   try {
     await waitForConversationMutation(scrollElement, 240);
@@ -261,7 +300,7 @@ async function restoreScrollPosition(document: Document, scrollElement: HTMLElem
     const identity = getMessageIdentity(node, role, index);
     if (identity.id !== point.anchorId) continue;
     const currentOffset = node.getBoundingClientRect().top - top;
-    scrollElement.scrollTop += currentOffset - point.anchorOffset;
+    setScrollPosition(scrollElement, scrollPosition(scrollElement) + currentOffset - point.anchorOffset);
     dispatchSyntheticScroll(document, scrollElement);
     break;
   }
@@ -489,8 +528,8 @@ async function rollbackAfterTurboGap(
   settleMs: number,
   signal?: AbortSignal
 ): Promise<void> {
-  const range = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
-  scrollElement.scrollTop = Math.min(Math.max(0, safeTop), range);
+  const range = scrollRange(scrollElement);
+  setScrollPosition(scrollElement, Math.min(Math.max(0, safeTop), range));
   dispatchSyntheticScroll(document, scrollElement);
   await waitForConversationMutation(scrollElement, waitMs, signal);
   await delay(settleMs, signal);
@@ -532,6 +571,7 @@ export async function collectFullChatGPTConversation(
   let continuityVerified = true;
   let topStability = 0;
   let tailStability = 0;
+  let tailNoProgress = 0;
   let gapsDetected = 0;
   let gapsRecovered = 0;
   let unresolvedGaps = 0;
@@ -590,8 +630,9 @@ export async function collectFullChatGPTConversation(
       if (!checkSafetyBudget()) break;
       iterations++;
       const atBottomBefore = distanceFromBottom(scrollElement) <= BOTTOM_TOLERANCE_PX;
+      const tailTopBefore = scrollPosition(scrollElement);
       if (!atBottomBefore) {
-        scrollElement.scrollTop = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+        setScrollPosition(scrollElement, scrollRange(scrollElement));
         dispatchSyntheticScroll(document, scrollElement);
       }
       await waitForConversationMutation(scrollElement, waitOverride ?? TAIL_VERIFY_WAIT_MS, options.signal);
@@ -601,8 +642,15 @@ export async function collectFullChatGPTConversation(
       const atBottomAfter = distanceFromBottom(scrollElement) <= BOTTOM_TOLERANCE_PX;
       if (atBottomAfter && latest.added === 0 && latest.newestId === newestBefore) tailStability++;
       else tailStability = 0;
+      const tailMoved = Math.abs(scrollPosition(scrollElement) - tailTopBefore) > TOP_TOLERANCE_PX;
+      if (!atBottomAfter && !tailMoved && latest.added === 0 && latest.newestId === newestBefore) tailNoProgress++;
+      else tailNoProgress = 0;
       newestBefore = latest.newestId;
       emitProgress(options, "capturing", messageMap.size, iterations, topStability, "turbo");
+      if (tailNoProgress >= noProgressLimit) {
+        partialReason = "no-progress";
+        break;
+      }
     }
 
     tailIds = new Set(latest.snapshot.ids.filter((id) => collectedIds.has(id)));
@@ -623,7 +671,7 @@ export async function collectFullChatGPTConversation(
       if (!checkSafetyBudget()) break;
       iterations++;
 
-      const topBefore = scrollElement.scrollTop;
+      const topBefore = scrollPosition(scrollElement);
       const oldestBefore = order[0];
       const heightBefore = scrollElement.scrollHeight;
 
@@ -646,7 +694,7 @@ export async function collectFullChatGPTConversation(
         assertPageStable();
         latest = capture();
         topStability = nextTopStabilityPasses(topStability, {
-          atTop: scrollElement.scrollTop <= TOP_TOLERANCE_PX,
+          atTop: scrollPosition(scrollElement) <= TOP_TOLERANCE_PX,
           added: latest.added,
           oldestBefore,
           oldestAfter: order[0],
@@ -671,7 +719,7 @@ export async function collectFullChatGPTConversation(
       const safeBatch: BatchSnapshot | undefined = previousBatch;
 
       emitProgress(options, mode === "recovery" ? "recovering-gap" : "loading-older", messageMap.size, iterations, topStability, mode);
-      scrollElement.scrollTop = requestedTop;
+      setScrollPosition(scrollElement, requestedTop);
       dispatchSyntheticScroll(document, scrollElement);
 
       const waitMs = mode === "turbo"
@@ -683,7 +731,7 @@ export async function collectFullChatGPTConversation(
       latest = capture();
       const currentBatch = latest.snapshot;
       const continuity = checkBatchContinuity(previousBatch, currentBatch);
-      const moved = Math.abs(scrollElement.scrollTop - topBefore) > TOP_TOLERANCE_PX;
+      const moved = Math.abs(scrollPosition(scrollElement) - topBefore) > TOP_TOLERANCE_PX;
       const oldestChanged = oldestBefore !== order[0];
       const meaningfulProgress = latest.added > 0 || oldestChanged;
 
@@ -738,7 +786,7 @@ export async function collectFullChatGPTConversation(
         noProgress = meaningfulProgress || moved ? 0 : noProgress + 1;
       }
 
-      if (noProgress >= noProgressLimit && scrollElement.scrollTop > TOP_TOLERANCE_PX) {
+      if (noProgress >= noProgressLimit && scrollPosition(scrollElement) > TOP_TOLERANCE_PX) {
         partialReason = recoveryTarget ? "unresolved-gap" : "no-progress";
         if (recoveryTarget) {
           continuityVerified = false;
@@ -796,7 +844,11 @@ export async function collectFullChatGPTConversation(
     uniqueParsedMessages: messageMap.size,
     duplicateCandidatesSkipped,
     oldestMessageId: messages[0]?.id,
-    newestMessageId: messages[messages.length - 1]?.id
+    newestMessageId: messages[messages.length - 1]?.id,
+    scrollContainer: describeScrollElement(scrollElement),
+    scrollRangePx: Math.round(scrollRange(scrollElement)),
+    scrollPositionPx: Math.round(scrollPosition(scrollElement)),
+    scrollCoordinateMode: usesNegativeScrollCoordinates(scrollElement) ? "negative" as const : "standard" as const
   };
 
   const completeness: ExtractionCompleteness = canMarkComplete

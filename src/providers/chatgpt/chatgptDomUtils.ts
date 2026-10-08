@@ -96,7 +96,29 @@ export function findMessageContent(roleNode: Element, role: "user" | "assistant"
     if (roleNode.hasAttribute("data-user-message-bubble")) return roleNode.querySelector('.whitespace-pre-wrap, [data-message-content]') ?? roleNode;
     return roleNode.querySelector(CHATGPT_SELECTORS.userContent) ?? roleNode;
   }
-  return roleNode.querySelector(CHATGPT_SELECTORS.assistantContent) ?? roleNode;
+
+  // In the current ChatGPT renderer, data-conversation-role="assistant"
+  // can be a small accessible label ("ChatGPT said:") while the real response
+  // is rendered as its sibling inside the same turn shell. Search both the role
+  // marker and its turn shell, then select the richest assistant content node.
+  const shell = roleNode.closest(CHATGPT_SELECTORS.turnShells);
+  const candidates = [
+    ...Array.from(roleNode.querySelectorAll(CHATGPT_SELECTORS.assistantContent)),
+    ...(shell && shell !== roleNode ? Array.from(shell.querySelectorAll(CHATGPT_SELECTORS.assistantContent)) : [])
+  ].filter((candidate, index, all) =>
+    all.indexOf(candidate) === index
+    && !candidate.closest("[data-user-message-bubble]")
+  );
+
+  let best: Element | undefined;
+  let bestLength = -1;
+  for (const candidate of candidates) {
+    const length = (candidate.textContent ?? "").replace(/\s+/g, " ").trim().length;
+    if (length <= bestLength) continue;
+    best = candidate;
+    bestLength = length;
+  }
+  return best ?? roleNode;
 }
 
 export function isElementMeaningfullyVisible(element: Element): boolean {
@@ -119,12 +141,32 @@ export function conversationIdentityFromLocation(location: Location): string {
   return conversationIdFromLocation(location) ?? `${location.hostname}${location.pathname}${location.search}`;
 }
 
+function hasResponsiveScrollTop(element: HTMLElement): boolean {
+  const range = Math.max(0, element.scrollHeight - element.clientHeight);
+  if (range <= 0) return false;
+
+  const original = element.scrollTop;
+  element.scrollTop = original < range ? Math.min(range, original + 1) : Math.max(0, original - 1);
+  let moved = Math.abs(element.scrollTop - original) > 0.5;
+  if (!moved) {
+    // A column-reverse scroller uses 0 at the visual bottom and negative
+    // scrollTop values while moving toward older content.
+    element.scrollTop = original > -range ? Math.max(-range, original - 1) : Math.min(0, original + 1);
+    moved = Math.abs(element.scrollTop - original) > 0.5;
+  }
+  element.scrollTop = original;
+  return moved;
+}
+
 function isUsefulScrollCandidate(element: HTMLElement): boolean {
   const style = getComputedStyle(element);
   const scrollableOverflow = /(auto|scroll)/.test(style.overflowY);
   const hasRange = element.scrollHeight > element.clientHeight + 120;
   const usefulViewport = element.clientHeight >= Math.min(280, Math.max(120, window.innerHeight * 0.25));
-  return scrollableOverflow && hasRange && usefulViewport;
+  // Some current ChatGPT renderers keep the actual conversation viewport
+  // programmatically scrollable while reporting overflow-y as hidden/clip.
+  // Verify that scrollTop really responds instead of relying only on CSS.
+  return hasRange && usefulViewport && (scrollableOverflow || hasResponsiveScrollTop(element));
 }
 
 export function findConversationScrollElement(document: Document): HTMLElement {

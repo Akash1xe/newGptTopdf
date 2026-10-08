@@ -66,6 +66,10 @@ export interface ExtractionCompleteness {
   duplicateCandidatesSkipped?: number;
   oldestMessageId?: string;
   newestMessageId?: string;
+  scrollContainer?: string;
+  scrollRangePx?: number;
+  scrollPositionPx?: number;
+  scrollCoordinateMode?: "standard" | "negative";
 }
 
 export interface ConversationData {

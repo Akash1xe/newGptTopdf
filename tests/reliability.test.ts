@@ -9,6 +9,7 @@ import {
   type BatchSnapshot
 } from "../src/providers/chatgpt/chatgptCollector";
 import { parseChatGPTMessage } from "../src/providers/chatgpt/chatgptParser";
+import { findConversationScrollElement } from "../src/providers/chatgpt/chatgptDomUtils";
 
 function simulateVirtualizedCollection(total: number, windowSize = 80, overlap = 20): string[] {
   const all = Array.from({ length: total }, (_, index) => `turn-${index}`);
@@ -34,6 +35,44 @@ function batch(from: number, to: number): BatchSnapshot {
 }
 
 describe("reliability helpers", () => {
+  it("finds a programmatically scrollable ChatGPT viewport even when overflow is hidden", () => {
+    document.body.innerHTML = `
+      <div id="viewport" style="overflow-y: hidden">
+        <main>
+          <article data-message-author-role="user" data-testid="conversation-turn-0">Question</article>
+          <article data-message-author-role="assistant" data-testid="conversation-turn-1">Answer</article>
+        </main>
+      </div>`;
+    const viewport = document.querySelector<HTMLElement>("#viewport")!;
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 600 });
+    Object.defineProperty(viewport, "clientWidth", { configurable: true, value: 900 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 3_000 });
+
+    expect(findConversationScrollElement(document)).toBe(viewport);
+  });
+
+  it("finds a negative-coordinate reverse conversation viewport", () => {
+    document.body.innerHTML = `
+      <div id="reverse-viewport" style="overflow-y: clip">
+        <main>
+          <article data-message-author-role="user" data-testid="conversation-turn-0">Question</article>
+          <article data-message-author-role="assistant" data-testid="conversation-turn-1">Answer</article>
+        </main>
+      </div>`;
+    const viewport = document.querySelector<HTMLElement>("#reverse-viewport")!;
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 600 });
+    Object.defineProperty(viewport, "clientWidth", { configurable: true, value: 900 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 3_000 });
+    let top = 0;
+    Object.defineProperty(viewport, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => { top = Math.max(-2_400, Math.min(0, value)); }
+    });
+
+    expect(findConversationScrollElement(document)).toBe(viewport);
+  });
+
   it("prepends older lazy-loaded turns around overlap without duplicates", () => {
     expect(mergeCollectedOrder(["m3", "m4", "m5"], ["m1", "m2", "m3", "m4"])).toEqual(["m1", "m2", "m3", "m4", "m5"]);
   });

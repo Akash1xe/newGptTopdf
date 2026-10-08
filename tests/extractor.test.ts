@@ -88,6 +88,26 @@ describe("ChatGPT conversation extraction", () => {
     expect(data.messages.every((message) => message.identityQuality === "strong")).toBe(true);
   });
 
+  it("extracts an assistant response rendered beside a separate ChatGPT-said role label", () => {
+    document.body.innerHTML = `
+      <main>
+        <div data-turn-key="turn-sibling-content">
+          <div data-user-message-bubble><div class="whitespace-pre-wrap">Give me the DP list</div></div>
+          <div data-conversation-role="assistant">ChatGPT said:</div>
+          <div data-message-content>
+            <div class="markdown"><h2>Dynamic Programming</h2><p>This is the complete assistant response with all questions.</p></div>
+          </div>
+        </div>
+      </main>
+    `;
+
+    const data = extractChatGPTConversation(document, window.location);
+    expect(data.messageCount).toBe(2);
+    expect(data.messages[1].role).toBe("assistant");
+    expect(data.messages[1].plainText).toContain("complete assistant response with all questions");
+    expect(data.messages[1].plainText).not.toBe("ChatGPT said:");
+  });
+
   it("merges mixed legacy and grouped role signals without dropping the user or duplicating the assistant", () => {
     document.body.innerHTML = `
       <main>
