@@ -11,9 +11,19 @@ function fnv1a(value: string): string {
 }
 
 export function shouldIgnoreChatGPTElement(element: Element): boolean {
+  if (element.hasAttribute("hidden")) return true;
+  if (element.getAttribute("aria-hidden") === "true" && !element.matches('.katex, .katex *, math, math *, svg')) return true;
+  if (element.matches('.sr-only, [data-export-role-label]')) return true;
+  if (element.matches('button[role="checkbox"], button[role="radio"], button[role="switch"]')) return false;
+  if (element.matches('button,[role="button"]') && /^(open pdf|check answer|submit|review|download)(\s|$)/i.test(element.textContent?.trim() || '') && !element.closest('.turn-action-controls,[role="menu"]')) return false;
+  // Image viewers wrap real content in buttons; retain the image, not icons.
+  if (element.matches('button,[role="button"]')) {
+    const hasContentImage = Array.from(element.querySelectorAll('img')).some((img) =>
+      Math.max(img.naturalWidth || Number(img.getAttribute('width')) || img.clientWidth,
+        img.naturalHeight || Number(img.getAttribute('height')) || img.clientHeight) > 80);
+    if (hasContentImage) return false;
+  }
   if (element.matches(CHATGPT_SELECTORS.ignored)) return true;
-  if (element.getAttribute("hidden") !== null) return true;
-  if (element.getAttribute("aria-hidden") === "true" && !element.matches('.katex, .katex *, math, math *')) return true;
   const testId = element.getAttribute("data-testid")?.toLowerCase() ?? "";
   if (["copy", "feedback", "regenerate", "share", "read-aloud"].some((token) => testId.includes(token))) return true;
   return false;
@@ -97,28 +107,21 @@ export function findMessageContent(roleNode: Element, role: "user" | "assistant"
     return roleNode.querySelector(CHATGPT_SELECTORS.userContent) ?? roleNode;
   }
 
-  // In the current ChatGPT renderer, data-conversation-role="assistant"
-  // can be a small accessible label ("ChatGPT said:") while the real response
-  // is rendered as its sibling inside the same turn shell. Search both the role
-  // marker and its turn shell, then select the richest assistant content node.
-  const shell = roleNode.closest(CHATGPT_SELECTORS.turnShells);
-  const candidates = [
-    ...Array.from(roleNode.querySelectorAll(CHATGPT_SELECTORS.assistantContent)),
-    ...(shell && shell !== roleNode ? Array.from(shell.querySelectorAll(CHATGPT_SELECTORS.assistantContent)) : [])
-  ].filter((candidate, index, all) =>
-    all.indexOf(candidate) === index
-    && !candidate.closest("[data-user-message-bubble]")
-  );
-
-  let best: Element | undefined;
-  let bestLength = -1;
-  for (const candidate of candidates) {
-    const length = (candidate.textContent ?? "").replace(/\s+/g, " ").trim().length;
-    if (length <= bestLength) continue;
-    best = candidate;
-    bestLength = length;
+  // Export the whole response, including widgets between Markdown sections.
+  // A role marker can itself be a label or an inner message-id shell. Walk
+  // through those shells to the enclosing turn, never into another turn.
+  let root = roleNode;
+  const labelOnly = /^(ChatGPT|Assistant)\s+said\s*:?$/i.test(roleNode.textContent?.trim() ?? "")
+    || roleNode.matches('.sr-only');
+  if (labelOnly) {
+    let parent = roleNode.parentElement;
+    while (parent && !parent.matches('main,body,html')) {
+      root = parent;
+      if (parent.matches('[data-turn-key], [data-turn-id], [data-testid^="conversation-turn"], article')) break;
+      parent = parent.parentElement;
+    }
   }
-  return best ?? roleNode;
+  return root;
 }
 
 export function isElementMeaningfullyVisible(element: Element): boolean {

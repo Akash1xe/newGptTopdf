@@ -24,6 +24,8 @@ export type CodeTokenType =
 
 export interface TextNode {
   type: "text";
+  sourceColor?: string;
+  sourceSurface?: string;
   text: string;
   bold?: boolean;
   italic?: boolean;
@@ -149,6 +151,8 @@ export interface ImageBlock {
 }
 
 export type ContentBlock =
+  | { type: "layout"; columns: number; card: boolean; sourceBackground?: string; sourceBorder?: string; sourceAlign?: string; columnWidths?: string; darkOnly?: boolean; blocks: ContentBlock[] }
+  | { type: "control"; kind: "radio" | "checkbox" | "slider" | "progress" | "action"; text: string; checked: boolean; percent: number }
   | ParagraphBlock
   | HeadingBlock
   | OrderedListBlock

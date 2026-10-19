@@ -22,7 +22,7 @@ function countRichNodes(blocks: ContentBlock[]): { codeBlocks: number; mathNodes
       if (block.type === "code") codeBlocks++;
       else if (block.type === "math") mathNodes++;
       else if (block.type === "image") images++;
-      else if (block.type === "blockquote") walk(block.blocks);
+      else if (block.type === "blockquote" || block.type === "layout") walk(block.blocks);
       else if (block.type === "ordered-list" || block.type === "unordered-list") block.items.forEach((item) => walk(item.blocks));
       else if (block.type === "paragraph" || block.type === "heading") mathNodes += countInline(block.children).mathNodes;
       else if (block.type === "table") block.rows.forEach((row) => row.cells.forEach((cell) => { mathNodes += countInline(cell.children).mathNodes; }));
@@ -99,7 +99,7 @@ export function extractChatGPTConversation(document: Document, location: Locatio
     if (seen.has(id)) continue;
     const content = findMessageContent(node, role);
     try {
-      const parsed = parseChatGPTMessage(content);
+      const parsed = parseChatGPTMessage(content, role);
       if (!parsed.plainText && parsed.blocks.length === 0) continue;
       seen.add(id);
       messages.push({ id, role, order: messages.length, sourceOrder: identity.ordinal, identityQuality: identity.quality, plainText: parsed.plainText, blocks: parsed.blocks });

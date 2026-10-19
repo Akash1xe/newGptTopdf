@@ -46,8 +46,15 @@ function flattenTokens(root: Element): CodeToken[] {
       return;
     }
     if (!(node instanceof Element)) return;
+    if (node.tagName.toLowerCase() === 'br') {
+      tokens.push({ text: '\n', tokenType: 'plain' });
+      return;
+    }
+    const lineWrapper = node.matches('div, .line, .code-line');
+    if (lineWrapper && tokens.length && !tokens[tokens.length - 1].text.endsWith('\n')) tokens.push({ text: '\n', tokenType: 'plain' });
     const classes = [...inheritedClasses, ...Array.from(node.classList)];
     node.childNodes.forEach((child) => visit(child, classes));
+    if (lineWrapper && !tokens.at(-1)?.text.endsWith('\n')) tokens.push({ text: '\n', tokenType: 'plain' });
   };
   root.childNodes.forEach((child) => visit(child, []));
   return tokens;
@@ -100,15 +107,16 @@ function detectLanguage(code: Element, pre: Element): { language?: string; displ
 }
 
 export function isCodeBlockElement(element: Element): boolean {
-  return element.tagName.toLowerCase() === "pre";
+  return element.tagName.toLowerCase() === "pre" || (element.matches('code') && !element.closest('pre') &&
+    (element.matches('[class*="language-"], [data-language]') || /\n/.test(element.textContent ?? '')));
 }
 
 export function extractCodeBlock(element: Element): CodeBlock | null {
-  const pre = element.tagName.toLowerCase() === "pre" ? element : element.closest("pre");
+  const pre = isCodeBlockElement(element) ? element : element.closest("pre");
   if (!pre) return null;
   const codeElement = pre.querySelector("code") ?? pre;
   let tokens = flattenTokens(codeElement);
-  let code = normalizeNewlines(codeElement.textContent ?? "");
+  let code = tokens.map(token => token.text).join('');
   ({ code, tokens } = trimOneStructuralTrailingNewline(code, tokens));
   const lines = tokensToLines(tokens, code);
   const hasHighlightedTokens = tokens.some((token) => token.tokenType !== "plain");

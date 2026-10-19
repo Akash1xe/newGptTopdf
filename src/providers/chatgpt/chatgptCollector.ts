@@ -377,7 +377,7 @@ function discoverMountedMessageCandidates(document: Document): MountedMessageCan
 function parseCandidate(candidate: MountedMessageCandidate, order: number): ConversationMessage | null {
   const content = findMessageContent(candidate.element, candidate.role);
   try {
-    const parsed = parseChatGPTMessage(content);
+    const parsed = parseChatGPTMessage(content, candidate.role);
     if (!parsed.plainText && parsed.blocks.length === 0) return null;
     return {
       id: candidate.id,

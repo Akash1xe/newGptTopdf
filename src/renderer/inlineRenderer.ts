@@ -1,9 +1,16 @@
 import type { InlineNode } from "../types/content";
 import { renderMath } from "./mathRenderer";
 import { el } from "./dom";
+import { isSourceColor, readableSourceColor } from './sourceColors';
 
 function renderText(document: Document, node: Extract<InlineNode, { type: "text" }>): Node {
   let current: Node = document.createTextNode(node.text);
+  if (isSourceColor(node.sourceColor)) {
+    const span = el(document, 'span', 'source-color');
+    span.style.setProperty('--source-color', readableSourceColor(node.sourceColor, document, node.sourceSurface));
+    span.style.setProperty('--source-color-light', readableSourceColor(node.sourceColor, document, 'rgb(255,255,255)'));
+    span.appendChild(current); current = span;
+  }
   if (node.strikethrough) {
     const del = el(document, "del"); del.appendChild(current); current = del;
   }

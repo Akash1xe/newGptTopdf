@@ -1,6 +1,8 @@
 import type { InlineNode, TextNode } from "../types/content";
 import type { ParserContext } from "./types";
 import { normalizeProseWhitespace, sanitizeHref } from "./sanitization";
+import { controlText } from "./controlText";
+import { isSourceColor } from '../renderer/sourceColors';
 
 interface Marks {
   bold?: boolean;
@@ -21,12 +23,21 @@ function nextMarks(element: Element, marks: Marks): Marks {
   };
 }
 
-function parseNode(node: Node, context: ParserContext, marks: Marks): InlineNode[] {
+export function parseNode(node: Node, context: ParserContext, marks: Marks = {}): InlineNode[] {
   if (node.nodeType === Node.TEXT_NODE) {
     const text = normalizeProseWhitespace(node.textContent ?? "");
-    return text ? [textNode(text, marks)] : [];
+    const sourceColor = node.parentElement ? node.ownerDocument?.defaultView?.getComputedStyle(node.parentElement).color : undefined;
+    let sourceSurface: string | undefined;
+    for (let parent = node.parentElement; parent && parent.tagName !== 'BODY'; parent = parent.parentElement) {
+      if (!parent.matches('div,section,fieldset,label')) continue;
+      const bg = parent.ownerDocument.defaultView?.getComputedStyle(parent).backgroundColor;
+      if (isSourceColor(bg) && bg !== 'rgba(0, 0, 0, 0)') { sourceSurface = bg; break; }
+    }
+    return text ? [{ ...textNode(text, marks), ...(isSourceColor(sourceColor) ? { sourceColor, sourceSurface } : {}) }] : [];
   }
   if (!(node instanceof Element) || context.shouldIgnoreElement(node)) return [];
+  const control = controlText(node);
+  if (control !== undefined) return [textNode(control, marks)];
 
   const tag = node.tagName.toLowerCase();
   if (tag === "br") return [{ type: "line-break" }];
@@ -48,7 +59,7 @@ function parseNode(node: Node, context: ParserContext, marks: Marks): InlineNode
 }
 
 function sameMarks(a: TextNode, b: TextNode): boolean {
-  return a.bold === b.bold && a.italic === b.italic && a.strikethrough === b.strikethrough;
+  return a.bold === b.bold && a.italic === b.italic && a.strikethrough === b.strikethrough && a.sourceColor === b.sourceColor && a.sourceSurface === b.sourceSurface;
 }
 
 export function normalizeInlineNodes(nodes: InlineNode[]): InlineNode[] {

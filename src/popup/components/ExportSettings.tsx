@@ -40,7 +40,8 @@ export function ExportSettings({ preferences, onChange, advanced, onToggleAdvanc
   return (
     <section className="settings-card">
       <div className="section-title"><strong>Export</strong><span>PDF preferences</span></div>
-      <SelectField label="Theme" value={preferences.pdfTheme} options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} onChange={(value) => patch("pdfTheme", value)} />
+      <SelectField label="PDF theme" value={preferences.pdfTheme} options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark — preserve chat colors" }]} onChange={(value) => patch("pdfTheme", value)} />
+      {preferences.pdfTheme === 'dark' && <p>Best with ChatGPT in dark mode. Enable Background graphics in the print dialog to keep dark page colors. Code uses a dark palette.</p>}
       <SelectField label="Page size" value={preferences.pageSize} options={[{ value: "A4", label: "A4" }, { value: "Letter", label: "Letter" }]} onChange={(value) => patch("pageSize", value)} />
       <ToggleField label="Exclude my prompts" hint="Export only ChatGPT responses." checked={preferences.excludeUserMessages} onChange={setExcludeUserMessages} />
       <button type="button" className="advanced-toggle" aria-expanded={advanced} onClick={onToggleAdvanced}>More options <span aria-hidden="true">{advanced ? "−" : "+"}</span></button>

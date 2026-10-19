@@ -4,7 +4,7 @@ import { el } from "./dom";
 import { highlightCodeLines } from "./fallbackCodeHighlighter";
 
 export function renderCodeBlock(document: Document, block: CodeBlock, preferences: ExportPreferences): HTMLElement {
-  const wrapper = el(document, "figure", `code-block code-theme-${preferences.codeTheme}`);
+  const wrapper = el(document, "figure", `code-block code-theme-${preferences.pdfTheme === 'dark' ? 'dark' : preferences.codeTheme}`);
   if (block.lineCount <= 18) wrapper.classList.add("code-short");
   if (block.hasLongLines) wrapper.classList.add("code-has-long-lines");
   if (preferences.wrapCode) wrapper.classList.add("code-wrap");

@@ -9,9 +9,10 @@ function sourceType(src: string | undefined): ImageSourceType {
 }
 
 function meaningfulImage(img: HTMLImageElement): boolean {
-  if (img.closest("button,[role=button],nav,aside")) return false;
+  if (img.closest("nav,aside")) return false;
   const width = img.naturalWidth || Number(img.getAttribute("width")) || img.clientWidth;
   const height = img.naturalHeight || Number(img.getAttribute("height")) || img.clientHeight;
+  if (img.closest('button,[role="button"]') && Math.max(width, height) <= 80) return false;
   if (width > 0 && height > 0 && width <= 40 && height <= 40) return false;
   const alt = (img.getAttribute("alt") ?? "").toLowerCase();
   if (/avatar|logo|icon/.test(alt) && Math.max(width, height) <= 96) return false;
@@ -20,6 +21,18 @@ function meaningfulImage(img: HTMLImageElement): boolean {
 
 function sanitizeSvg(svg: SVGElement): string {
   const clone = svg.cloneNode(true) as SVGElement;
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  // SVGs lose page styles when embedded as an image in the print page.
+  const originals = [svg, ...Array.from(svg.querySelectorAll('*'))];
+  const copies = [clone, ...Array.from(clone.querySelectorAll('*'))];
+  originals.forEach((node, index) => {
+    const style = node.ownerDocument.defaultView?.getComputedStyle(node);
+    if (!style) return;
+    for (const property of ['fill', 'stroke', 'stroke-width', 'opacity', 'font-size', 'font-family', 'font-weight', 'color']) {
+      const value = style.getPropertyValue(property);
+      if (value && !/url\(/i.test(value)) (copies[index] as SVGElement).style.setProperty(property, value);
+    }
+  });
   clone.querySelectorAll("script,foreignObject,iframe,object,embed").forEach((node) => node.remove());
   for (const node of [clone, ...Array.from(clone.querySelectorAll("*"))]) {
     for (const attr of Array.from(node.attributes)) {
@@ -55,8 +68,8 @@ export function extractChatGPTImageBlock(element: Element): ImageBlock | null {
       type: "image",
       src,
       alt: img.alt?.trim() || undefined,
-      width: img.naturalWidth || img.clientWidth || undefined,
-      height: img.naturalHeight || img.clientHeight || undefined,
+      width: img.clientWidth || Number(img.getAttribute('width')) || img.naturalWidth || undefined,
+      height: img.clientHeight || Number(img.getAttribute('height')) || img.naturalHeight || undefined,
       sourceType: sourceType(src),
       mediaKind: "image"
     };
@@ -68,9 +81,9 @@ export function extractChatGPTImageBlock(element: Element): ImageBlock | null {
       return {
         type: "image",
         src,
-        alt: svg.getAttribute("aria-label")?.trim() || "Diagram",
-        width: svg.clientWidth || undefined,
-        height: svg.clientHeight || undefined,
+        alt: [svg.getAttribute("aria-label")?.trim() || "Diagram", svg.textContent?.replace(/\s+/g, ' ').trim()].filter(Boolean).join(': '),
+        width: svg.clientWidth || (/^\d+(\.\d+)?$/.test(svg.getAttribute('width') || '') ? Number(svg.getAttribute('width')) : undefined),
+        height: svg.clientHeight || (/^\d+(\.\d+)?$/.test(svg.getAttribute('height') || '') ? Number(svg.getAttribute('height')) : undefined),
         sourceType: "data",
         mediaKind: "svg"
       };
