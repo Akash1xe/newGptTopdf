@@ -383,7 +383,7 @@ function parseCandidate(candidate: MountedMessageCandidate, order: number): Conv
   const content = findMessageContent(candidate.element, candidate.role);
   try {
     const parsed = parseChatGPTMessage(content, candidate.role);
-    if (!parsed.plainText && parsed.blocks.length === 0) return null;
+    if (!parsed.plainText && parsed.blocks.length === 0 && !parsed.omittedAttachmentOnly) return null;
     return {
       id: candidate.id,
       role: candidate.role,

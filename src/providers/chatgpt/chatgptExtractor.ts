@@ -100,7 +100,7 @@ export function extractChatGPTConversation(document: Document, location: Locatio
     const content = findMessageContent(node, role);
     try {
       const parsed = parseChatGPTMessage(content, role);
-      if (!parsed.plainText && parsed.blocks.length === 0) continue;
+      if (!parsed.plainText && parsed.blocks.length === 0 && !parsed.omittedAttachmentOnly) continue;
       seen.add(id);
       messages.push({ id, role, order: messages.length, sourceOrder: identity.ordinal, identityQuality: identity.quality, plainText: parsed.plainText, blocks: parsed.blocks });
     } catch {

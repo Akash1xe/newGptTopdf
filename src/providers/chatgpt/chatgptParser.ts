@@ -4,6 +4,7 @@ import { shouldIgnoreChatGPTElement, getMessageRole } from "./chatgptDomUtils";
 import { extractCodeBlock, isCodeBlockElement } from "./chatgptCode";
 import { extractMathNode, isMathElement } from "./chatgptMath";
 import { extractChatGPTImageBlock, isChatGPTImageElement } from "./chatgptMedia";
+import { findUserFileCards } from "./chatgptAttachments";
 
 export const chatGPTParserContext: ParserContext = {
   shouldIgnoreElement: shouldIgnoreChatGPTElement,
@@ -16,9 +17,11 @@ export const chatGPTParserContext: ParserContext = {
 };
 
 export function parseChatGPTMessage(content: Element, role?: "user" | "assistant") {
+  const fileCards = findUserFileCards(content, role);
   const context: ParserContext = {
     ...chatGPTParserContext,
     shouldIgnoreElement(element) {
+      if (fileCards.has(element)) return true;
       const elementRole = getMessageRole(element);
       if (role && elementRole && elementRole !== role) return true;
       if ((elementRole || element.matches('h1,h2,h3,h4,h5,h6'))
@@ -26,6 +29,6 @@ export function parseChatGPTMessage(content: Element, role?: "user" | "assistant
       return shouldIgnoreChatGPTElement(element);
     }
   };
-  const blocks = parseBlocks(content, context);
-  return { blocks, plainText: blocksToPlainText(blocks) };
+  const blocks = fileCards.has(content) ? [] : parseBlocks(content, context);
+  return { blocks, plainText: blocksToPlainText(blocks), omittedAttachmentOnly: fileCards.size > 0 && blocks.length === 0 };
 }

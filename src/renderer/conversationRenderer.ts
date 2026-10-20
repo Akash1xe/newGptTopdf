@@ -45,6 +45,9 @@ export function renderConversation(document: Document, conversation: Conversatio
   }
 
   conversation.messages.forEach((message) => {
+    // Attachment-only user turns still count for history verification, but
+    // intentionally have no printable content (including no empty role label).
+    if (!message.plainText && message.blocks.length === 0) return;
     const section = el(document, "section", `message message-${message.role}`);
     if (!assistantOnly) {
       const role = el(document, "div", "message-role");
