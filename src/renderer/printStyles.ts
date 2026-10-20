@@ -46,6 +46,7 @@ a { color: inherit; text-decoration: underline; text-underline-offset: 1.5px; ov
 .export-document { width: min(900px, calc(100% - 28px)); margin: 18px auto 54px; padding: 28px 34px; background: #fff; color: #171717; box-shadow: 0 8px 32px rgba(0,0,0,.07); font-family: var(--pdf-body-font); font-size: var(--pdf-body-size); font-weight: var(--pdf-body-weight); line-height: var(--pdf-line-height); }
 .export-document.theme-dark { background: #18181b; color: #f4f4f5; --pdf-rule: #3f3f46; --pdf-muted: #a1a1aa; --pdf-soft: #27272a; --pdf-code-bg: #202024; }
 .theme-dark .source-color { color: var(--source-color, inherit); }
+.export-document.theme-light { color: #000; }
 .theme-light .source-color { color: var(--source-color-light, inherit); }
 .theme-dark .visual-card { border-color: #52525b; }
 .theme-dark .visual-radio, .theme-dark .visual-checkbox { border-color: #d4d4d8; }

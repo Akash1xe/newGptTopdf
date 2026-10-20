@@ -8,7 +8,7 @@ function renderText(document: Document, node: Extract<InlineNode, { type: "text"
   if (isSourceColor(node.sourceColor)) {
     const span = el(document, 'span', 'source-color');
     span.style.setProperty('--source-color', readableSourceColor(node.sourceColor, document, node.sourceSurface));
-    span.style.setProperty('--source-color-light', readableSourceColor(node.sourceColor, document, 'rgb(255,255,255)'));
+    span.style.setProperty('--source-color-light', readableSourceColor(node.sourceColor, document, 'rgb(255,255,255)', true));
     span.appendChild(current); current = span;
   }
   if (node.strikethrough) {

@@ -3,12 +3,12 @@ export function isSourceColor(value: string | undefined): value is string {
   return !!value && /^(?:rgba?|hsla?|oklch|oklab|lch|lab|color)\([a-z0-9.,%\s/+\-]+\)$/i.test(value);
 }
 
-export function readableSourceColor(value: string, document: Document, surface = 'rgb(24,24,27)'): string {
+export function readableSourceColor(value: string, document: Document, surface = 'rgb(24,24,27)', blackNeutralText = false): string {
   // Resolve modern color spaces in the browser before checking contrast.
   // Cache per document: a long conversation repeats the same small palette.
   let cache = palettes.get(document);
   if (!cache) { cache = new Map(); palettes.set(document, cache); }
-  const key = value + ':' + surface;
+  const key = value + ':' + surface + ':' + blackNeutralText;
   const cached = cache.get(key);
   if (cached) return cached;
   let result = value;
@@ -17,6 +17,12 @@ export function readableSourceColor(value: string, document: Document, surface =
     if (context) {
       context.fillStyle = value; context.fillRect(0, 0, 1, 1);
       const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+      // Light-mode body copy should be black, not the minimum-contrast gray.
+      // Inspect source channels before compositing so translucent accents retain hue.
+      if (blackNeutralText && Math.max(r, g, b) - Math.min(r, g, b) <= 12) {
+        cache.set(key, 'rgb(0, 0, 0)');
+        return 'rgb(0, 0, 0)';
+      }
       context.clearRect(0,0,1,1); context.fillStyle = surface; context.fillRect(0,0,1,1);
       const bg = context.getImageData(0,0,1,1).data;
       const background = [bg[0],bg[1],bg[2]].map((channel,i)=>channel*bg[3]/255 + [24,24,27][i]*(1-bg[3]/255));
