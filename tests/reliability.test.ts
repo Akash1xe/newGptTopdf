@@ -104,6 +104,41 @@ describe("reliability helpers", () => {
     expect(continuity.overlapCount).toBeGreaterThan(0);
   });
 
+  it("does not let a pinned overlapping turn conceal missing middle messages", () => {
+    const previous = batch(700, 760);
+    const current = batch(500, 560);
+    current.ids.push("turn-760");
+    current.ordinals.push(760);
+    expect(checkBatchContinuity(previous, current).status).toBe("gap-suspected");
+  });
+
+  it("refreshes a previously captured message after lazy content hydration", async () => {
+    document.body.innerHTML = `<main><article data-message-author-role="assistant"
+      data-testid="conversation-turn-0"><p>First paragraph.</p></article></main>`;
+    let hydrated = false;
+    const result = await collectFullChatGPTConversation(document, window.location, {
+      mutationWaitMs: 1, settleMs: 0, topStabilityPasses: 1, maxDurationMs: 2000,
+      onProgress(progress) {
+        if (!hydrated && progress.phase === "capturing") {
+          hydrated = true;
+          document.querySelector("article")!.innerHTML += "<p>Previously missing middle and end.</p>";
+        }
+      }
+    });
+    expect(result.completeness.state).toBe("complete");
+    expect(result.messages[0].plainText).toContain("Previously missing middle and end.");
+  });
+
+  it("does not certify a stable top whose reliable ordinals start after zero", async () => {
+    document.body.innerHTML = `<main><article data-message-author-role="assistant"
+      data-testid="conversation-turn-8"><p>Older messages are still absent.</p></article></main>`;
+    const result = await collectFullChatGPTConversation(document, window.location, {
+      mutationWaitMs: 1, settleMs: 0, topStabilityPasses: 1, maxDurationMs: 2000
+    });
+    expect(result.completeness.state).toBe("known-partial");
+    expect(result.completeness.reason).toBe("unresolved-gap");
+  });
+
   it("accepts reliable ordinal-adjacent batches even without ID overlap", () => {
     const previous = batch(700, 760);
     const current = batch(620, 699);

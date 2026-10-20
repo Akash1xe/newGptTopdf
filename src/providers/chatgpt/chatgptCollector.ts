@@ -56,6 +56,7 @@ interface MountedMessageCandidate {
 
 interface CaptureResult {
   added: number;
+  updated: number;
   skipped: number;
   snapshot: BatchSnapshot;
   oldestId?: string;
@@ -76,12 +77,16 @@ export interface ContinuityCheck {
 
 type CollectorMode = "turbo" | "recovery" | "verify";
 
-const DEFAULT_MAX_DURATION_MS = 180_000;
+// A hundred-page history can legitimately take much longer than three minutes.
+// Cancellation and the no-progress checks still bound a stalled collection.
+const DEFAULT_MAX_DURATION_MS = 30 * 60_000;
 const DEFAULT_NO_PROGRESS_LIMIT = 6;
 const DEFAULT_TOP_STABILITY_PASSES = 3;
 const TAIL_STABILITY_PASSES = 2;
-const FAST_SCROLL_RATIO = 3;
-const RECOVERY_SCROLL_RATIO = 0.85;
+// Always overlap viewports: an overlapping ID alone does not prove that the
+// content between two distant viewports was mounted.
+const FAST_SCROLL_RATIO = 0.75;
+const RECOVERY_SCROLL_RATIO = 0.4;
 const FAST_WAIT_STEPS = [220, 380, 650, 1_000] as const;
 const FAST_SETTLE_MS = 60;
 const RECOVERY_WAIT_MS = 700;
@@ -407,23 +412,37 @@ function captureUnseenMessages(
   document: Document,
   messageMap: Map<string, ConversationMessage>,
   collectedIds: Set<string>,
-  currentOrder: string[]
+  currentOrder: string[],
+  contentSnapshots: Map<string, string>
 ): { result: CaptureResult; order: string[] } {
   const candidates = discoverMountedMessageCandidates(document);
   const ids = candidates.map((candidate) => candidate.id);
   let added = 0;
+  let updated = 0;
   let skipped = 0;
 
   for (const candidate of candidates) {
-    if (collectedIds.has(candidate.id)) {
+    const content = findMessageContent(candidate.element, candidate.role);
+    const signature = content.innerHTML;
+    if (collectedIds.has(candidate.id) && contentSnapshots.get(candidate.id) === signature) {
       skipped++;
       continue;
     }
     const message = parseCandidate(candidate, messageMap.size);
     if (!message) continue;
+    contentSnapshots.set(candidate.id, signature);
+    const previous = messageMap.get(candidate.id);
+    // Virtualization can replace a hydrated response with a shorter excerpt.
+    // Keep the complete capture rather than downgrading it on the way past.
+    if (previous && previous.plainText.length > message.plainText.length
+      && previous.plainText.includes(message.plainText)) {
+      skipped++;
+      continue;
+    }
     messageMap.set(candidate.id, message);
     collectedIds.add(candidate.id);
-    added++;
+    if (previous) updated++;
+    else added++;
   }
 
   const order = mergeCollectedOrder(currentOrder, ids.filter((id) => collectedIds.has(id)));
@@ -434,6 +453,7 @@ function captureUnseenMessages(
   return {
     result: {
       added,
+      updated,
       skipped,
       snapshot: {
         ids,
@@ -465,6 +485,12 @@ export function checkBatchContinuity(previous: BatchSnapshot | undefined, curren
 
   const previousIds = new Set(previous.ids);
   const overlapCount = current.ids.reduce((count, id) => count + (previousIds.has(id) ? 1 : 0), 0);
+  // A persistent/pinned turn can overlap while entire intervening turns are
+  // absent. Reliable ordinals must be checked before trusting that overlap.
+  if (previous.allOrdinalsReliable && current.allOrdinalsReliable) {
+    const gaps = detectOrdinalGaps([...previous.ordinals, ...current.ordinals]);
+    if (gaps.length) return { status: "gap-suspected", overlapCount, missingOrdinalRanges: gaps };
+  }
   if (overlapCount > 0) return { status: "continuous", overlapCount, missingOrdinalRanges: [] };
 
   if (previous.allOrdinalsReliable && current.allOrdinalsReliable && previous.ordinals.length && current.ordinals.length) {
@@ -560,6 +586,8 @@ export async function collectFullChatGPTConversation(
   const restorePoint = captureScrollRestorePoint(document, scrollElement);
   const messageMap = new Map<string, ConversationMessage>();
   const collectedIds = new Set<string>();
+  const observedIds = new Set<string>();
+  const contentSnapshots = new Map<string, string>();
   let order: string[] = [];
   let noProgress = 0;
   let iterations = 0;
@@ -609,7 +637,8 @@ export async function collectFullChatGPTConversation(
   };
 
   const capture = (): CaptureResult => {
-    const captured = captureUnseenMessages(document, messageMap, collectedIds, order);
+    const captured = captureUnseenMessages(document, messageMap, collectedIds, order, contentSnapshots);
+    for (const id of captured.result.snapshot.ids) observedIds.add(id);
     order = captured.order;
     duplicateCandidatesSkipped += captured.result.skipped;
     return captured.result;
@@ -640,7 +669,7 @@ export async function collectFullChatGPTConversation(
       assertPageStable();
       latest = capture();
       const atBottomAfter = distanceFromBottom(scrollElement) <= BOTTOM_TOLERANCE_PX;
-      if (atBottomAfter && latest.added === 0 && latest.newestId === newestBefore) tailStability++;
+      if (atBottomAfter && latest.added === 0 && latest.updated === 0 && latest.newestId === newestBefore) tailStability++;
       else tailStability = 0;
       const tailMoved = Math.abs(scrollPosition(scrollElement) - tailTopBefore) > TOP_TOLERANCE_PX;
       if (!atBottomAfter && !tailMoved && latest.added === 0 && latest.newestId === newestBefore) tailNoProgress++;
@@ -655,11 +684,18 @@ export async function collectFullChatGPTConversation(
 
     tailIds = new Set(latest.snapshot.ids.filter((id) => collectedIds.has(id)));
     verifiedEnd = tailStability >= TAIL_STABILITY_PASSES && tailIds.size > 0;
+    // The first snapshot may be from the middle of the conversation. A direct
+    // jump to the tail has no overlap and must not prepend the tail before it.
+    // Rebuild ordering from the verified tail while traversing upward, retaining
+    // the previously parsed content cache.
+    order = [...tailIds];
     previousBatch = latest.snapshot;
 
     if (!partialReason) {
       const mountedMessages = sortCollectedMessages(order, messageMap);
-      if (canUseMountedFastPath(mountedMessages, verifiedEnd)) {
+      // Mounted turn shells can contain only excerpts until scrolled into view.
+      // Only skip traversal when the entire conversation fits in the viewport.
+      if (scrollRange(scrollElement) <= TOP_TOLERANCE_PX && canUseMountedFastPath(mountedMessages, verifiedEnd)) {
         verifiedBeginning = true;
         beginningEvidence = "turn-ordinal";
         continuityVerified = true;
@@ -695,7 +731,7 @@ export async function collectFullChatGPTConversation(
         latest = capture();
         topStability = nextTopStabilityPasses(topStability, {
           atTop: scrollPosition(scrollElement) <= TOP_TOLERANCE_PX,
-          added: latest.added,
+          added: latest.added + latest.updated,
           oldestBefore,
           oldestAfter: order[0],
           heightBefore,
@@ -714,7 +750,8 @@ export async function collectFullChatGPTConversation(
       mode = recoveryTarget ? "recovery" : "turbo";
       topStability = 0;
       const ratio = mode === "turbo" ? FAST_SCROLL_RATIO : RECOVERY_SCROLL_RATIO;
-      const step = Math.max(scrollElement.clientHeight * ratio, mode === "turbo" ? 900 : 320);
+      const viewportHeight = scrollElement.clientHeight || document.defaultView?.innerHeight || 600;
+      const step = Math.max(1, viewportHeight * ratio);
       const requestedTop = Math.max(0, topBefore - step);
       const safeBatch: BatchSnapshot | undefined = previousBatch;
 
@@ -733,7 +770,7 @@ export async function collectFullChatGPTConversation(
       const continuity = checkBatchContinuity(previousBatch, currentBatch);
       const moved = Math.abs(scrollPosition(scrollElement) - topBefore) > TOP_TOLERANCE_PX;
       const oldestChanged = oldestBefore !== order[0];
-      const meaningfulProgress = latest.added > 0 || oldestChanged;
+      const meaningfulProgress = latest.added > 0 || latest.updated > 0 || oldestChanged;
 
       if (mode === "turbo") turboIterations++;
       else recoveryIterations++;
@@ -796,6 +833,16 @@ export async function collectFullChatGPTConversation(
     }
 
     const messagesBeforeRestore = sortCollectedMessages(order, messageMap);
+    const missingMountedMessages = [...observedIds].some((id) => !collectedIds.has(id))
+      || messagesBeforeRestore.length !== messageMap.size;
+    const startsAfterZero = messagesBeforeRestore.length > 0
+      && messagesBeforeRestore.every((message) => Number.isSafeInteger(message.sourceOrder))
+      && Math.min(...messagesBeforeRestore.map((message) => message.sourceOrder!)) > 0;
+    if (missingMountedMessages || startsAfterZero) {
+      continuityVerified = false;
+      partialReason ??= "unresolved-gap";
+      unresolvedGaps = Math.max(1, unresolvedGaps);
+    }
     verifiedEnd = verifiedEnd && hasTail(messagesBeforeRestore, tailIds);
     const ordinalGaps = ordinalGapsWhenReliable(messagesBeforeRestore);
     if (ordinalGaps.length > 0) {
